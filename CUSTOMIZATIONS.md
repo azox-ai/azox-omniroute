@@ -85,6 +85,44 @@ Verification:
 - isolated soak: zero outbound proxy-log rows, zero Cloudflare challenges and
   zero permanent-disable events.
 
+### Preserve Responses SSE across the web_search fallback
+
+Files:
+
+- `open-sse/handlers/chatCore.ts`
+- `open-sse/handlers/chatCore/responsesJsonToSse.ts`
+- `open-sse/utils/responsesJsonToSse.ts`
+- `tests/unit/responses-json-to-sse-13033.test.ts`
+- `tests/unit/codex-stream-false.test.ts`
+- `tests/unit/8395-plugin-hooks-fire.test.ts`
+
+Problem: a `/v1/responses` request with `stream: true` and a native
+`web_search` tool is forced non-streaming so the server-side fallback can run.
+The assembled result was then returned as `application/json`, so Codex clients
+waiting for Responses SSE aborted with `stream closed before
+response.completed` while the request stayed HTTP `200` and was billed.
+
+Fix: record the client's original Responses stream intent before `stream` is
+forced to `false`, keep the upstream call non-streaming, and frame the
+assembled result back as Responses SSE. A Chat Completions payload reuses the
+existing Responses transform; a payload that is already Responses-shaped is
+synthesized directly, which preserves `web_search_call` items and emits
+exactly one terminal `response.completed` followed by `data: [DONE]`.
+
+References:
+
+- GitHub fork PR: `azox-ai/azox-omniroute#3`
+- Upstream issue: `diegosouzapw/OmniRoute#13033`
+- Upstream PR: `diegosouzapw/OmniRoute#13050`
+
+Note: upstream PR `#13050` only covers the Chat Completions payload shape. The
+Responses-shaped branch is company-authored and should be offered upstream on
+that pull request.
+
+Verification: targeted tests `17/17`, TypeScript typecheck, ESLint on every
+changed file, and `check:file-size` passed; removing the Responses-shaped
+branch turns the end-to-end `handleChatCore` regression test red.
+
 ## Production Reference
 
 Source commit before this distribution metadata commit:
@@ -111,4 +149,3 @@ Example:
 ```text
 zad-zbs-fiza-v3.8.51.1
 ```
-
