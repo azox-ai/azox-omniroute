@@ -311,6 +311,45 @@ test("chatCore converts Responses-style NDJSON fallback into JSON when stream=fa
   assert.ok(payload.usage.total_tokens >= 7);
 });
 
+test("chatCore preserves Responses SSE when web_search fallback forces upstream stream=false", async () => {
+  const { result, call } = await invokeChatCore({
+    body: {
+      model: "gpt-4o-mini",
+      stream: true,
+      input: "Say hello",
+      tools: [{ type: "web_search" }],
+    },
+    provider: "openai",
+    model: "gpt-4o-mini",
+    endpoint: "/responses",
+    accept: "text/event-stream",
+    responseFactory: () =>
+      jsonResponse({
+        id: "chatcmpl-web-search-fallback",
+        object: "chat.completion",
+        model: "gpt-4o-mini",
+        choices: [
+          {
+            index: 0,
+            message: { role: "assistant", content: "hello" },
+            finish_reason: "stop",
+          },
+        ],
+        usage: { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 },
+      }),
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(call.body.stream, false);
+  assert.match(result.response.headers.get("content-type") || "", /^text\/event-stream/);
+  const stream = await result.response.text();
+  assert.match(stream, /event: response\.created/);
+  assert.match(stream, /event: response\.completed/);
+  assert.equal(stream.match(/event: response\.completed/g)?.length, 1);
+  assert.match(stream, /data: \[DONE\]/);
+  assert.match(stream, /hello/);
+});
+
 test("handleComboChat validates non-stream quality using the original client stream intent", async () => {
   const combo = {
     name: "codex-stream-false-quality",

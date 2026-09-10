@@ -6,6 +6,10 @@
  */
 import { createResponsesApiTransformStream } from "../../transformer/responsesTransformer.ts";
 import { synthesizeOpenAiSseFromJson } from "../../utils/jsonToSse.ts";
+import {
+  buildNonStreamingResponsesSseResponse,
+  synthesizeResponsesSseFromResponse,
+} from "../../utils/responsesJsonToSse.ts";
 import { buildNonStreamingJsonResponse } from "./nonStreamingJsonResponse.ts";
 
 function copyForwardHeaders(headers: Record<string, string> | undefined): Record<string, string> {
@@ -60,6 +64,13 @@ export function maybeWrapForcedNonStreamingResponsesJson(args: {
   const { clientRequestedResponsesStream, body, headers } = args;
   if (!clientRequestedResponsesStream || !body || typeof body !== "object" || Array.isArray(body)) {
     return buildNonStreamingJsonResponse(body, headers);
+  }
+  // A Responses-endpoint client already gets a Responses-shaped payload here
+  // (`object: "response"` / `output[]`), which carries no `choices[]` for the
+  // Chat Completions synthesizer below. Frame it directly as Responses SSE so
+  // the tool items produced by the fallback survive (#13033).
+  if (synthesizeResponsesSseFromResponse(body)) {
+    return buildNonStreamingResponsesSseResponse(body, headers);
   }
   return wrapChatCompletionJsonAsResponsesSse(body as Record<string, unknown>, headers);
 }
