@@ -1,5 +1,7 @@
 import type { NextRequest } from "next/server";
 import { runAuthzPipeline } from "./server/authz/pipeline";
+import { NextResponse } from "next/server";
+import { hasValidPortalSyncToken } from "./lib/auth/portalSync";
 
 // #10627: the proxy runs in its own Next.js runtime and never executes
 // instrumentation-node.ts's startup warm-ups, so its FIRST request used to
@@ -21,6 +23,11 @@ void import("./lib/db/readCache")
   });
 
 export async function proxy(request: NextRequest) {
+  if (request.nextUrl.pathname.startsWith("/api/internal/portal/")) {
+    return hasValidPortalSyncToken(request)
+      ? NextResponse.next()
+      : NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   return runAuthzPipeline(request, { enforce: true });
 }
 
