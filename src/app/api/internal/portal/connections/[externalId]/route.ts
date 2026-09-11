@@ -6,6 +6,7 @@ import {
   getProviderConnections,
   updateProviderConnection,
 } from "@/models";
+import { resolvePortalConnectionName } from "@/lib/providers/portalSyncMetadata";
 
 const ALLOWED_PROVIDERS = new Set(["claude", "codex"]);
 
@@ -80,14 +81,7 @@ export async function PUT(
     );
   if (existing && existing.provider !== input.provider)
     return NextResponse.json({ error: "Provider cannot be changed" }, { status: 409 });
-  if (existing && input.tokenVersion === currentVersion)
-    return NextResponse.json({
-      id: existing.id,
-      provider: existing.provider,
-      enabled: existing.isActive !== false,
-      expiresAt: existing.expiresAt || null,
-      tokenVersion: currentVersion,
-    });
+  const connectionName = resolvePortalConnectionName(input.displayName, input.name);
   const values = {
     provider: input.provider,
     authType: "oauth",
@@ -102,7 +96,7 @@ export async function PUT(
       portalTokenVersion: input.tokenVersion,
     },
     ...(input.email ? { email: input.email } : {}),
-    ...(input.name ? { name: input.name } : {}),
+    ...(connectionName ? { name: connectionName } : {}),
     ...(input.displayName ? { displayName: input.displayName } : {}),
     ...(input.idToken ? { idToken: input.idToken } : {}),
     ...(input.scope ? { scope: input.scope } : {}),
