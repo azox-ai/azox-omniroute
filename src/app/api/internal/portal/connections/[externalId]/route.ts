@@ -7,6 +7,7 @@ import {
   updateProviderConnection,
 } from "@/models";
 import { resolvePortalConnectionName } from "@/lib/providers/portalSyncMetadata";
+import { buildPortalRecoveryUpdate } from "@/lib/providers/portalManagedConnection";
 
 const ALLOWED_PROVIDERS = new Set(["claude", "codex"]);
 
@@ -103,7 +104,13 @@ export async function PUT(
     ...(input.tokenType ? { tokenType: input.tokenType } : {}),
   };
   const connection = existing
-    ? await updateProviderConnection(existing.id, { ...values, refreshToken: undefined })
+    ? await updateProviderConnection(existing.id, {
+        ...values,
+        // Heal rows an earlier sweep marked expired/deactivated before
+        // Portal-managed connections were recognised as such.
+        ...buildPortalRecoveryUpdate(),
+        refreshToken: undefined,
+      })
     : await createProviderConnection(values);
   return NextResponse.json({
     id: connection?.id,
