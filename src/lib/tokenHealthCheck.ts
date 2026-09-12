@@ -23,6 +23,7 @@ import {
 } from "@omniroute/open-sse/services/tokenRefresh.ts";
 import { pickMaskedDisplayValue } from "@/shared/utils/maskEmail";
 import { isAutomatedTestProcess } from "@/shared/utils/testProcess";
+import { isPortalManagedConnection } from "@/lib/providers/portalManagedConnection";
 import { refreshGithubCopilotSubTokenIfNeeded } from "@/lib/tokenHealthCheckCopilot";
 import { checkCursorConnectionIfNeeded } from "@/lib/tokenHealthCheckCursor";
 import { checkKimiWebConnectionIfNeeded } from "@/lib/tokenHealthCheckKimi";
@@ -544,6 +545,15 @@ export async function checkConnection(conn) {
 
   const latestConnection = (await getCachedProviderConnectionById(conn.id)) || conn;
   conn = latestConnection;
+
+  // LLM Portal is the sole owner of the rotating refresh token for these rows and
+  // pushes a fresh access token on its own schedule. Refreshing or expiring them
+  // here would fight that authority: the sweep saw no refresh token, marked the
+  // account "needs re-auth" and eventually deactivated a perfectly healthy
+  // sponsored account. Leave the whole lifecycle to the Portal push.
+  if (isPortalManagedConnection(conn)) {
+    return;
+  }
 
   // Per-provider opt-out of proactive refresh (e.g. Codex/OpenAI cascade
   // providers) — their token stays on the reactive, serialized 401 path while
