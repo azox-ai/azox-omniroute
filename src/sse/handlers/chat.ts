@@ -1827,6 +1827,10 @@ async function handleSingleModelChat(
             provider,
             model: effectiveModel,
             refreshedCredentials,
+            accountAlias:
+              (typeof credentials.name === "string" && credentials.name.trim()) ||
+              (typeof credentials.displayName === "string" && credentials.displayName.trim()) ||
+              null,
             proxyInfo,
             appliedProxySink,
             log,
