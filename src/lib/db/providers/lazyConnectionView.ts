@@ -40,6 +40,8 @@ export interface ProviderConnectionView {
   id: string;
   provider: string;
   authType: string | null;
+  name: string | null;
+  displayName: string | null;
   email: string | null;
   isActive: boolean;
   rateLimitedUntil: string | null;
@@ -79,6 +81,8 @@ export function toProviderConnection(value: unknown): ProviderConnectionView {
     id: toStringOrNull(row.id) || "",
     provider: toStringOrNull(row.provider) || "",
     authType: toStringOrNull(row.authType),
+    name: toStringOrNull(row.name),
+    displayName: toStringOrNull(row.displayName),
     email: toStringOrNull(row.email),
     isActive: row.isActive === true,
     rateLimitedUntil: toStringOrNull(row.rateLimitedUntil),

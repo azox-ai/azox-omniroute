@@ -1155,6 +1155,8 @@ function materializeConnection(
     id: connection.id,
     provider: connection.provider,
     authType: connection.authType,
+    name: connection.name,
+    displayName: connection.displayName,
     email: connection.email,
     connectionId: connection.id,
     testStatus: connection.testStatus,
