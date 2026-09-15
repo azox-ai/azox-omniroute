@@ -22,6 +22,7 @@ import { takeEarlyKeepaliveBytes } from "../../utils/earlyKeepaliveByteBuffer.ts
 import { sanitizeErrorMessage } from "../../utils/error.ts";
 import { cloneBoundedChatLogPayload, truncateForLog } from "./logTruncation.ts";
 import { attachLogMeta } from "./cacheUsageMeta.ts";
+import { buildGatewayAttemptLog } from "./gatewayAttemptLog.ts";
 
 /**
  * Apply the video-bridge redaction shadow (P1a's `meta.videoBridgeLogRedaction`,
@@ -222,9 +223,13 @@ export type PersistAttemptLogsContext = {
   detailedLoggingEnabled: boolean;
   reqLogger: { getPipelinePayloads?: () => Record<string, unknown> | undefined } | null | undefined;
   pendingRequestId: unknown;
-  clientRawRequest: { endpoint?: string } | null | undefined;
+  clientRawRequest:
+    | { endpoint?: string; headers?: Record<string, unknown> | Headers | null }
+    | null
+    | undefined;
   requestedModel: unknown;
-  credentials: { connectionId?: string } | null | undefined;
+  credentials: Record<string, unknown> | null | undefined;
+  accountAlias?: string | null;
   startTime: number;
   body: unknown;
   sourceFormat: unknown;
@@ -363,6 +368,7 @@ export function persistAttemptLogs(args: PersistAttemptLogsArgs, ctx: PersistAtt
     clientRawRequest,
     requestedModel,
     credentials,
+    accountAlias,
     startTime,
     body,
     sourceFormat,
@@ -385,6 +391,27 @@ export function persistAttemptLogs(args: PersistAttemptLogsArgs, ctx: PersistAtt
     provider,
     initialConnectionId,
     finalConnectionId
+  );
+
+  // Metadata-only JSON line for Loki/Grafana. Never includes prompts,
+  // responses, credential material, or raw error messages.
+  console.log(
+    JSON.stringify(
+      buildGatewayAttemptLog({
+        correlationId,
+        clientHeaders: clientRawRequest?.headers,
+        comboName,
+        comboStepId,
+        provider,
+        model,
+        accountAlias,
+        credentials,
+        connectionId: finalConnectionId,
+        status,
+        error,
+        startTime,
+      })
+    )
   );
 
   const providerWarnings = extractProviderWarnings(providerResponse, clientResponse, responseBody);
