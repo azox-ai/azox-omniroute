@@ -158,6 +158,16 @@ describe("claudeIdentity — selectBetaFlags", () => {
     const flags = mod.selectBetaFlags({});
     assert.ok(flags.includes("oauth-2025-04-20"));
     assert.ok(flags.includes("interleaved-thinking"));
+    assert.ok(flags.includes("redact-thinking-2026-02-12"));
+  });
+
+  it("omits redact-thinking when summarized thinking is requested", () => {
+    const flags = mod.selectBetaFlags({
+      thinking: { type: "adaptive", display: "summarized" },
+    });
+    assert.ok(flags.includes("interleaved-thinking-2025-05-14"));
+    assert.ok(flags.includes("thinking-token-count-2026-05-13"));
+    assert.ok(!flags.includes("redact-thinking-2026-02-12"));
   });
 
   it("includes claude-code flag for full agent shape", () => {

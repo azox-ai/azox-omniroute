@@ -10,8 +10,8 @@
  * Adapted: OmniRoute previously promoted `reasoning.effort` only behind the
  * Copilot-client gate (commit 75d9a83c25), which silently dropped the field for
  * every other Responses client (OpenCode, Cursor, raw OpenAI Responses, ...).
- * This test pins the unconditional promotion of effort while keeping the
- * Copilot-only `summary` -> Claude thinking marker behind its existing gate.
+ * These tests pin both the unconditional promotion of effort and the explicit
+ * `summary` -> Claude summarized-thinking mapping across the format pivot.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -19,6 +19,8 @@ import {
   openaiToOpenAIResponsesRequest,
   openaiResponsesToOpenAIRequest,
 } from "../../open-sse/translator/request/openai-responses.ts";
+import { FORMATS } from "../../open-sse/translator/formats.ts";
+import { translateRequest } from "../../open-sse/translator/index.ts";
 import { convertResponsesApiFormat } from "../../open-sse/translator/helpers/responsesApiHelper.ts";
 import { buildKiroPayload } from "../../open-sse/translator/request/openai-to-kiro.ts";
 
@@ -37,6 +39,29 @@ test("Responses -> Chat promotes reasoning.effort for non-Copilot clients", () =
   );
   assert.equal(out.reasoning_effort, "high");
   assert.equal(out.reasoning, undefined);
+});
+
+test("Responses -> Claude maps an explicit summary request for non-Copilot clients", () => {
+  const out = asRecord(
+    translateRequest(
+      FORMATS.OPENAI_RESPONSES,
+      FORMATS.CLAUDE,
+      "claude-opus-5",
+      {
+        input: "Explain why the sky is blue",
+        reasoning: { effort: "high", summary: "auto" },
+      },
+      true,
+      {},
+      "claude"
+    )
+  );
+
+  assert.deepEqual(out.thinking, {
+    type: "adaptive",
+    display: "summarized",
+  });
+  assert.deepEqual(out.output_config, { effort: "high" });
 });
 
 test("Responses -> Ollama Cloud Chat preserves every advertised reasoning effort", () => {

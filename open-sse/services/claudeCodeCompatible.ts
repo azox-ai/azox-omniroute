@@ -1061,6 +1061,7 @@ function resolveClaudeCodeCompatibleThinking({
 
   if (thinking) {
     return applyClaudeCodeCompatibleThinkingDisplay(thinking, {
+      sourceBody,
       normalizedBody,
       summarizeThinking,
     });
@@ -1071,6 +1072,7 @@ function resolveClaudeCodeCompatibleThinking({
       type: "adaptive",
     },
     {
+      sourceBody,
       normalizedBody,
       summarizeThinking,
     }

@@ -389,6 +389,8 @@ export function selectBetaFlags(
   const tools = b.tools as unknown[] | undefined;
   const hasTools = Array.isArray(tools) && tools.length > 0;
   const outputCfg = b.output_config as Record<string, unknown> | undefined;
+  const thinking = b.thinking as Record<string, unknown> | undefined;
+  const requestsSummarizedThinking = thinking?.display === "summarized";
   const hasStructuredOutput =
     !!(outputCfg && (outputCfg.format as { type?: string } | undefined)?.type === "json_schema") ||
     !!(b.response_format as { type?: string } | undefined)?.type;
@@ -407,11 +409,16 @@ export function selectBetaFlags(
   // interleaved-thinking semantics that conflict with a tool_choice-forced turn,
   // producing malformed opus tool_use streams when the client never asked for it.
   if (allowThinking) {
-    flags.push(
-      "interleaved-thinking-2025-05-14",
-      "redact-thinking-2026-02-12",
-      "thinking-token-count-2026-05-13"
-    );
+    flags.push("interleaved-thinking-2025-05-14");
+    // Anthropic's redact-thinking beta deliberately returns an empty thinking
+    // block plus an opaque signature. That conflicts with
+    // `thinking.display: "summarized"`, whose purpose is to return displayable
+    // summary text. Responses clients asking for a summary must therefore omit
+    // the redaction beta while keeping thinking token accounting enabled.
+    if (!requestsSummarizedThinking) {
+      flags.push("redact-thinking-2026-02-12");
+    }
+    flags.push("thinking-token-count-2026-05-13");
   }
   flags.push("context-management-2025-06-27", "prompt-caching-scope-2026-01-05");
   if (hasStructuredOutput || isFullAgent) flags.push("advisor-tool-2026-03-01");
