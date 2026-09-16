@@ -18,6 +18,7 @@ import {
   openAiImagePartToClaudeBlock,
   normalizeToolResultImages,
 } from "./openai-to-claude/imageBlocks.ts";
+import { CLAUDE_VISIBLE_REASONING_MARKER } from "../../config/internalRequestMarkers.ts";
 
 // Reasoning-effort levels Anthropic accepts on `output_config.effort`. Used to steer
 // adaptive-only Claude models (Opus 4.7+/Fable 5) without ever emitting a manual budget.
@@ -33,25 +34,6 @@ const ADAPTIVE_DOWNGRADE_BUDGET = 1024;
 // Can be disabled per-request via body._disableToolPrefix = true
 export const CLAUDE_OAUTH_TOOL_PREFIX = "proxy_";
 const CLAUDE_TOOL_CHOICE_REQUIRED = "an" + "y";
-const COPILOT_REASONING_SUMMARY_MARKER = "_omnirouteCopilotReasoningSummary";
-
-function wantsCopilotSummarizedThinking(body: Record<string, unknown> | null | undefined): boolean {
-  return body?.[COPILOT_REASONING_SUMMARY_MARKER] === "summarized";
-}
-
-function applyCopilotSummarizedThinkingDisplay(
-  thinking: Record<string, unknown> | undefined,
-  body: Record<string, unknown> | null | undefined
-): Record<string, unknown> | undefined {
-  if (!thinking || !wantsCopilotSummarizedThinking(body) || thinking.type === "disabled") {
-    return thinking;
-  }
-  return {
-    ...thinking,
-    display: "summarized",
-  };
-}
-
 // Thinking-budget fitting extracted to a pure leaf; re-exported for external
 // importers (tests). Host also uses fitThinkingToMaxTokens internally.
 export { fitThinkingToMaxTokens } from "./openai-to-claude/thinkingBudget.ts";
@@ -279,11 +261,23 @@ export function openaiToClaudeRequest(model, body, stream, credentials = null) {
     if (fitted.thinking === undefined) {
       delete result.thinking;
     } else {
-      result.thinking = applyCopilotSummarizedThinkingDisplay(fitted.thinking, body);
+      result.thinking = fitted.thinking;
+      if (body?.[CLAUDE_VISIBLE_REASONING_MARKER] === true && result.thinking.type !== "disabled") {
+        result.thinking = {
+          ...result.thinking,
+          display: "summarized",
+        };
+      }
     }
   }
 
-  delete result[COPILOT_REASONING_SUMMARY_MARKER];
+  if (
+    body?.[CLAUDE_VISIBLE_REASONING_MARKER] === true &&
+    result.thinking &&
+    result.thinking.type !== "disabled"
+  ) {
+    result[CLAUDE_VISIBLE_REASONING_MARKER] = true;
+  }
 
   // Final guard: Claude rejects `temperature` whenever extended thinking is
   // enabled. If `result.thinking` was set above from `body.thinking` or

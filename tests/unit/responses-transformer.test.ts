@@ -219,6 +219,73 @@ test("createResponsesApiTransformStream prefers reasoning_content without duplic
   assert.deepEqual(reasoningDeltas, ["canonical"]);
 });
 
+test(
+  "createResponsesApiTransformStream emits every reasoning delta before final output arrives",
+  { timeout: 2_000 },
+  async () => {
+    const stream = createResponsesApiTransformStream(null, 3000, {});
+    const writer = stream.writable.getWriter();
+    const reader = stream.readable.getReader();
+    const received = [];
+    let resolveFirstReasoning;
+    let resolveSecondReasoning;
+    const firstReasoning = new Promise((resolve) => {
+      resolveFirstReasoning = resolve;
+    });
+    const secondReasoning = new Promise((resolve) => {
+      resolveSecondReasoning = resolve;
+    });
+
+    const readerTask = (async () => {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const text = decoder.decode(value);
+        received.push(text);
+        const joined = received.join("");
+        if (joined.includes('"delta":"inspect the file "')) resolveFirstReasoning();
+        if (joined.includes('"delta":"then run tests"')) resolveSecondReasoning();
+      }
+    })();
+
+    await writer.write(
+      encoder.encode(
+        'data: {"choices":[{"index":0,"delta":{"reasoning_content":"inspect the file "}}]}\n\n'
+      )
+    );
+    await firstReasoning;
+    assert.equal(received.join("").includes("response.output_text.delta"), false);
+
+    await writer.write(
+      encoder.encode(
+        'data: {"choices":[{"index":0,"delta":{"reasoning_content":"then run tests"}}]}\n\n'
+      )
+    );
+    await secondReasoning;
+    assert.equal(received.join("").includes("response.output_text.delta"), false);
+
+    await writer.write(
+      encoder.encode('data: {"choices":[{"index":0,"delta":{"content":"done"}}]}\n\n')
+    );
+    await writer.close();
+    await readerTask;
+
+    const events = parseSseOutput(received.join(""));
+    assert.deepEqual(
+      events
+        .filter((event) => event.event === "response.reasoning_summary_text.delta")
+        .map((event) => JSON.parse(event.data).delta),
+      ["inspect the file ", "then run tests"]
+    );
+    assert.deepEqual(
+      events
+        .filter((event) => event.event === "response.output_text.delta")
+        .map((event) => JSON.parse(event.data).delta),
+      ["done"]
+    );
+  }
+);
+
 test("createResponsesApiTransformStream hides the internal reasoning replay placeholder", async () => {
   const output = await runTransformStream([
     'data: {"choices":[{"index":0,"delta":{"reasoning_content":"(prior reasoning summary unavailable)"}}]}\n\n',

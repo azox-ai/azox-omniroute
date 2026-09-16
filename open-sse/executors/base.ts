@@ -30,7 +30,12 @@ import {
   addParamToBlocklist,
   isAutoLearnGloballyEnabled,
 } from "@/lib/db/paramFilters";
-import { applyFingerprint, isCliCompatEnabled, stripInternalBodyFields } from "../config/cliFingerprints.ts";
+import {
+  applyFingerprint,
+  isCliCompatEnabled,
+  stripInternalBodyFields,
+} from "../config/cliFingerprints.ts";
+import { CLAUDE_VISIBLE_REASONING_MARKER } from "../config/internalRequestMarkers.ts";
 import { supportsClaudeMaxEffort, supportsXHighEffort } from "../config/providerModels.ts";
 import { getThinkingBudgetConfig, ThinkingMode } from "../services/thinkingBudget.ts";
 import {
@@ -582,7 +587,7 @@ export class BaseExecutor {
         if (cloned[key] === "") delete cloned[key];
       }
 
-      stripInternalBodyFields(cloned);
+      stripInternalBodyFields(cloned, { preserveClaudeVisibleReasoning: true });
 
       return cloned;
     }
@@ -1303,7 +1308,11 @@ export class BaseExecutor {
             const betaKey = Object.keys(headers).find(
               (key) => key.toLowerCase() === "anthropic-beta"
             );
-            if (betaKey && ccRequestDefaults.redactThinking !== true) {
+            const requestsVisibleReasoning = tb[CLAUDE_VISIBLE_REASONING_MARKER] === true;
+            if (
+              betaKey &&
+              (requestsVisibleReasoning || ccRequestDefaults.redactThinking !== true)
+            ) {
               headers[betaKey] = headers[betaKey]
                 .split(",")
                 .map((value) => value.trim())

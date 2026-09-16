@@ -9,6 +9,7 @@ import { FORMATS } from "../formats.ts";
 import { register } from "../registry.ts";
 import { normalizeResponsesInputForChat } from "../../utils/responsesInputNormalization.ts";
 import { extractReplayableResponsesReasoningText } from "../../services/reasoningInputPolicy.ts";
+import { CLAUDE_VISIBLE_REASONING_MARKER } from "../../config/internalRequestMarkers.ts";
 import {
   getRegisteredProviders,
   requiresPlainStringContent,
@@ -19,7 +20,6 @@ import { openaiToOpenAIResponsesRequest } from "./openai-responses/toResponses.t
 import {
   JsonRecord,
   RESPONSES_STORE_MARKER,
-  COPILOT_REASONING_SUMMARY_MARKER,
   WEB_SEARCH_TOOL_TYPES,
   X_SEARCH_TOOL_TYPES,
   TOOL_SEARCH_TOOL_TYPES,
@@ -802,9 +802,11 @@ export function openaiResponsesToOpenAIRequest(
   // openai-to-claude translator's extended-thinking path) keep the hint when a
   // Responses client is routed across formats. An explicit Responses `summary`
   // request also has to survive the OpenAI-format pivot when the resolved target
-  // is Claude; the next translator consumes the internal marker and maps it to
-  // `thinking.display: "summarized"`. Keep the Copilot branch for direct legacy
-  // callers that do not pass `_targetFormat`.
+  // is Claude. Claude's summarized display emits sparse phase headlines, while
+  // Codex expects incremental reasoning text throughout the thinking interval.
+  // Carry an internal visibility marker so the Claude dispatch path can request
+  // unredacted thinking without forwarding a proxy-only field upstream. Keep the
+  // Copilot branch for direct legacy callers that do not pass `_targetFormat`.
   if (root.reasoning && typeof root.reasoning === "object" && !Array.isArray(root.reasoning)) {
     const reasoningRec = toRecord(root.reasoning);
     const effort = toString(reasoningRec.effort);
@@ -816,7 +818,7 @@ export function openaiResponsesToOpenAIRequest(
       (targetsClaude || credentialRecord._copilotClient === true) &&
       shouldRequestClaudeSummarizedThinking(reasoningRec.summary)
     ) {
-      result[COPILOT_REASONING_SUMMARY_MARKER] = "summarized";
+      result[CLAUDE_VISIBLE_REASONING_MARKER] = true;
     }
   }
   delete result.reasoning;

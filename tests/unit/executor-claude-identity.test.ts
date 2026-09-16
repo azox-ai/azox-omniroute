@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { CLAUDE_VISIBLE_REASONING_MARKER } from "../../open-sse/config/internalRequestMarkers.ts";
 
 const mod = await import("../../open-sse/executors/claudeIdentity.ts");
 
@@ -164,6 +165,16 @@ describe("claudeIdentity — selectBetaFlags", () => {
   it("omits redact-thinking when summarized thinking is requested", () => {
     const flags = mod.selectBetaFlags({
       thinking: { type: "adaptive", display: "summarized" },
+    });
+    assert.ok(flags.includes("interleaved-thinking-2025-05-14"));
+    assert.ok(flags.includes("thinking-token-count-2026-05-13"));
+    assert.ok(!flags.includes("redact-thinking-2026-02-12"));
+  });
+
+  it("omits redact-thinking when the Responses bridge requests live reasoning", () => {
+    const flags = mod.selectBetaFlags({
+      thinking: { type: "adaptive" },
+      [CLAUDE_VISIBLE_REASONING_MARKER]: true,
     });
     assert.ok(flags.includes("interleaved-thinking-2025-05-14"));
     assert.ok(flags.includes("thinking-token-count-2026-05-13"));

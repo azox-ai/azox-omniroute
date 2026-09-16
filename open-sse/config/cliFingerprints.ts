@@ -10,6 +10,7 @@
  * Header order and body field order were captured via mitmproxy traffic analysis.
  */
 import { isClaudeCodeCompatible } from "../services/provider.ts";
+import { CLAUDE_VISIBLE_REASONING_MARKER } from "./internalRequestMarkers.ts";
 import {
   getAntigravityUserAgent,
   getGitHubCopilotChatUserAgent,
@@ -265,7 +266,10 @@ export function orderHeaders(
  * Apply a CLI fingerprint to headers and body.
  * Returns { headers, bodyString } with the correct ordering.
  */
-export function stripInternalBodyFields(body: unknown): unknown {
+export function stripInternalBodyFields(
+  body: unknown,
+  options: { preserveClaudeVisibleReasoning?: boolean } = {}
+): unknown {
   if (!body || typeof body !== "object" || Array.isArray(body)) return body;
 
   const record = body as Record<string, unknown>;
@@ -274,6 +278,9 @@ export function stripInternalBodyFields(body: unknown): unknown {
   delete record._nativeXaiResponsesPassthrough;
   delete record._nativeOpenAICompatibleResponsesPassthrough;
   delete record._omnirouteResponsesStore;
+  if (!options.preserveClaudeVisibleReasoning) {
+    delete record[CLAUDE_VISIBLE_REASONING_MARKER];
+  }
   return body;
 }
 

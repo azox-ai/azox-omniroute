@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { CLAUDE_VISIBLE_REASONING_MARKER } from "../../open-sse/config/internalRequestMarkers.ts";
 
 const {
   CLAUDE_CODE_COMPATIBLE_DEFAULT_MAX_TOKENS,
@@ -257,8 +258,8 @@ test("buildClaudeCodeCompatibleRequest can request summarized thinking display",
   assert.deepEqual(disabledThinking.thinking, { type: "disabled" });
 });
 
-test("buildClaudeCodeCompatibleRequest honors Responses reasoning.summary", () => {
-  const summarized = buildClaudeCodeCompatibleRequest({
+test("buildClaudeCodeCompatibleRequest streams visible thinking for Responses reasoning.summary", () => {
+  const visible = buildClaudeCodeCompatibleRequest({
     sourceBody: {
       reasoning: { effort: "high", summary: "auto" },
     },
@@ -269,10 +270,8 @@ test("buildClaudeCodeCompatibleRequest honors Responses reasoning.summary", () =
     cwd: "/tmp/claude-code-compatible",
     now: new Date("2026-01-02T12:00:00.000Z"),
   });
-  assert.deepEqual(summarized.thinking, {
-    type: "adaptive",
-    display: "summarized",
-  });
+  assert.deepEqual(visible.thinking, { type: "adaptive", display: "summarized" });
+  assert.equal(visible[CLAUDE_VISIBLE_REASONING_MARKER], true);
 
   const disabledSummary = buildClaudeCodeCompatibleRequest({
     sourceBody: {
@@ -286,6 +285,7 @@ test("buildClaudeCodeCompatibleRequest honors Responses reasoning.summary", () =
     now: new Date("2026-01-02T12:00:00.000Z"),
   });
   assert.deepEqual(disabledSummary.thinking, { type: "adaptive" });
+  assert.equal(disabledSummary[CLAUDE_VISIBLE_REASONING_MARKER], undefined);
 });
 
 test("buildClaudeCodeCompatibleRequest does not duplicate an existing default system skeleton", () => {

@@ -1,6 +1,5 @@
 import { shouldRequestClaudeSummarizedThinking } from "../translator/request/openai-responses/helpers.ts";
-
-const COPILOT_REASONING_SUMMARY_MARKER = "_omnirouteCopilotReasoningSummary";
+import { CLAUDE_VISIBLE_REASONING_MARKER } from "../config/internalRequestMarkers.ts";
 
 function getResponsesReasoningSummary(sourceBody?: Record<string, unknown> | null): unknown {
   const reasoning = sourceBody?.reasoning;
@@ -22,13 +21,18 @@ export function applyClaudeCodeCompatibleThinkingDisplay(
     return thinking;
   }
 
-  const markerRequestsSummary =
-    options.normalizedBody?.[COPILOT_REASONING_SUMMARY_MARKER] === "summarized";
-  const responsesRequestSummary = shouldRequestClaudeSummarizedThinking(
-    getResponsesReasoningSummary(options.sourceBody)
-  );
+  const responsesRequestWantsVisibleThinking =
+    options.normalizedBody?.[CLAUDE_VISIBLE_REASONING_MARKER] === true ||
+    shouldRequestClaudeSummarizedThinking(getResponsesReasoningSummary(options.sourceBody));
+  if (responsesRequestWantsVisibleThinking) {
+    return {
+      ...thinking,
+      display: "summarized",
+    };
+  }
+
   const connectionRequestsSummary = options.summarizeThinking === true;
-  if (!markerRequestsSummary && !responsesRequestSummary && !connectionRequestsSummary) {
+  if (!connectionRequestsSummary) {
     return thinking;
   }
 
@@ -37,7 +41,7 @@ export function applyClaudeCodeCompatibleThinkingDisplay(
     thinking.display !== undefined &&
     thinking.display !== null &&
     String(thinking.display).trim().length > 0;
-  if (hasExplicitDisplay && !markerRequestsSummary && !responsesRequestSummary) {
+  if (hasExplicitDisplay) {
     return thinking;
   }
 
@@ -45,4 +49,14 @@ export function applyClaudeCodeCompatibleThinkingDisplay(
     ...thinking,
     display: "summarized",
   };
+}
+
+export function shouldStreamClaudeCodeCompatibleThinking(options: {
+  sourceBody?: Record<string, unknown> | null;
+  normalizedBody?: Record<string, unknown> | null;
+}): boolean {
+  return (
+    options.normalizedBody?.[CLAUDE_VISIBLE_REASONING_MARKER] === true ||
+    shouldRequestClaudeSummarizedThinking(getResponsesReasoningSummary(options.sourceBody))
+  );
 }

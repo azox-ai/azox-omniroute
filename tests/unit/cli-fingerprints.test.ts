@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-const { applyFingerprint } = await import("../../open-sse/config/cliFingerprints.ts");
+const { applyFingerprint, stripInternalBodyFields } =
+  await import("../../open-sse/config/cliFingerprints.ts");
+const { CLAUDE_VISIBLE_REASONING_MARKER } =
+  await import("../../open-sse/config/internalRequestMarkers.ts");
 
 test("Codex CLI fingerprint orders prompt_cache_key before include", () => {
   const body = {
@@ -33,4 +36,18 @@ test("Codex CLI fingerprint orders prompt_cache_key before include", () => {
     "tool_choice",
     "include",
   ]);
+});
+
+test("live Claude reasoning marker survives translation but is stripped before serialization", () => {
+  const body = {
+    thinking: { type: "adaptive" },
+    [CLAUDE_VISIBLE_REASONING_MARKER]: true,
+  };
+
+  stripInternalBodyFields(body, { preserveClaudeVisibleReasoning: true });
+  assert.equal(body[CLAUDE_VISIBLE_REASONING_MARKER], true);
+
+  stripInternalBodyFields(body);
+  assert.equal(body[CLAUDE_VISIBLE_REASONING_MARKER], undefined);
+  assert.deepEqual(body.thinking, { type: "adaptive" });
 });

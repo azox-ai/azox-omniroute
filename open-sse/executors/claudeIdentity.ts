@@ -15,6 +15,7 @@ import {
   CLAUDE_CODE_SDK_PACKAGE_VERSION,
   getClaudeCodeClientVersion,
 } from "@/shared/constants/claudeCodeClient";
+import { CLAUDE_VISIBLE_REASONING_MARKER } from "../config/internalRequestMarkers.ts";
 
 // ---------- Versions ------------------------------------------------------
 
@@ -391,6 +392,7 @@ export function selectBetaFlags(
   const outputCfg = b.output_config as Record<string, unknown> | undefined;
   const thinking = b.thinking as Record<string, unknown> | undefined;
   const requestsSummarizedThinking = thinking?.display === "summarized";
+  const requestsVisibleReasoning = b[CLAUDE_VISIBLE_REASONING_MARKER] === true;
   const hasStructuredOutput =
     !!(outputCfg && (outputCfg.format as { type?: string } | undefined)?.type === "json_schema") ||
     !!(b.response_format as { type?: string } | undefined)?.type;
@@ -411,11 +413,10 @@ export function selectBetaFlags(
   if (allowThinking) {
     flags.push("interleaved-thinking-2025-05-14");
     // Anthropic's redact-thinking beta deliberately returns an empty thinking
-    // block plus an opaque signature. That conflicts with
-    // `thinking.display: "summarized"`, whose purpose is to return displayable
-    // summary text. Responses clients asking for a summary must therefore omit
-    // the redaction beta while keeping thinking token accounting enabled.
-    if (!requestsSummarizedThinking) {
+    // block plus an opaque signature. Omit it whenever the request needs
+    // displayable reasoning, whether that is Anthropic's summarized display or
+    // the Responses bridge's live unredacted thinking stream.
+    if (!requestsSummarizedThinking && !requestsVisibleReasoning) {
       flags.push("redact-thinking-2026-02-12");
     }
     flags.push("thinking-token-count-2026-05-13");

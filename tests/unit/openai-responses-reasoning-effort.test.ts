@@ -11,7 +11,7 @@
  * Copilot-client gate (commit 75d9a83c25), which silently dropped the field for
  * every other Responses client (OpenCode, Cursor, raw OpenAI Responses, ...).
  * These tests pin both the unconditional promotion of effort and the explicit
- * `summary` -> Claude summarized-thinking mapping across the format pivot.
+ * `summary` -> visible Claude thinking mapping across the format pivot.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -23,6 +23,7 @@ import { FORMATS } from "../../open-sse/translator/formats.ts";
 import { translateRequest } from "../../open-sse/translator/index.ts";
 import { convertResponsesApiFormat } from "../../open-sse/translator/helpers/responsesApiHelper.ts";
 import { buildKiroPayload } from "../../open-sse/translator/request/openai-to-kiro.ts";
+import { CLAUDE_VISIBLE_REASONING_MARKER } from "../../open-sse/config/internalRequestMarkers.ts";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
@@ -41,7 +42,7 @@ test("Responses -> Chat promotes reasoning.effort for non-Copilot clients", () =
   assert.equal(out.reasoning, undefined);
 });
 
-test("Responses -> Claude maps an explicit summary request for non-Copilot clients", () => {
+test("Responses -> Claude requests live visible thinking for non-Copilot clients", () => {
   const out = asRecord(
     translateRequest(
       FORMATS.OPENAI_RESPONSES,
@@ -61,6 +62,7 @@ test("Responses -> Claude maps an explicit summary request for non-Copilot clien
     type: "adaptive",
     display: "summarized",
   });
+  assert.equal(out[CLAUDE_VISIBLE_REASONING_MARKER], true);
   assert.deepEqual(out.output_config, { effort: "high" });
 });
 

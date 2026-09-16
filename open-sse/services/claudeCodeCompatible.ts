@@ -17,7 +17,11 @@ import {
   disableThinkingIfToolChoiceForced,
   enforceCacheControlLimit,
 } from "./claudeCodeConstraints.ts";
-import { applyClaudeCodeCompatibleThinkingDisplay } from "./claudeCodeCompatibleThinkingDisplay.ts";
+import {
+  applyClaudeCodeCompatibleThinkingDisplay,
+  shouldStreamClaudeCodeCompatibleThinking,
+} from "./claudeCodeCompatibleThinkingDisplay.ts";
+import { CLAUDE_VISIBLE_REASONING_MARKER } from "../config/internalRequestMarkers.ts";
 import { obfuscateInBody } from "./claudeCodeObfuscation.ts";
 import { applySystemTransformPipeline, PROVIDER_CC_BRIDGE } from "./systemTransforms.ts";
 import { usesCcWireImage } from "./ccWireImageBuiltins.ts";
@@ -301,6 +305,10 @@ export function buildClaudeCodeCompatibleRequest({
     model,
     effort,
   });
+  const streamVisibleThinking = shouldStreamClaudeCodeCompatibleThinking({
+    sourceBody,
+    normalizedBody,
+  });
 
   return {
     model,
@@ -311,6 +319,9 @@ export function buildClaudeCodeCompatibleRequest({
     max_tokens: maxTokens,
     thinking,
     output_config: outputConfig,
+    ...(streamVisibleThinking && thinking.type !== "disabled"
+      ? { [CLAUDE_VISIBLE_REASONING_MARKER]: true }
+      : {}),
     ...(toolChoice ? { tool_choice: toolChoice } : {}),
     ...(stream ? { stream: true } : {}),
   };
@@ -380,6 +391,7 @@ export async function buildAndSignClaudeCodeRequest(
 
   // Step 7: Serialize with CCH placeholder (strip internal sentinel fields)
   delete (body as Record<string, unknown>)["_claudeCodeRequiresLowercaseToolNames"];
+  delete (body as Record<string, unknown>)[CLAUDE_VISIBLE_REASONING_MARKER];
   const serialized = JSON.stringify(body);
 
   // Step 8: Sign with xxHash64

@@ -133,10 +133,11 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
       total_tokens: u.total_tokens ?? input_tokens + output_tokens,
     };
     const cachedTokens =
-      u.input_tokens_details?.cached_tokens ?? u.prompt_tokens_details?.cached_tokens;
-    if (cachedTokens) {
-      state.usage.input_tokens_details = { cached_tokens: cachedTokens };
-    }
+      u.input_tokens_details?.cached_tokens ?? u.prompt_tokens_details?.cached_tokens ?? 0;
+    // The Responses API contract requires this nested field even when no input
+    // tokens came from cache. Codex CLI deserializes response.completed strictly
+    // and disconnects if input_tokens_details.cached_tokens is omitted.
+    state.usage.input_tokens_details = { cached_tokens: cachedTokens };
     const reasoningTokens =
       u.output_tokens_details?.reasoning_tokens ?? u.completion_tokens_details?.reasoning_tokens;
     if (reasoningTokens) {
