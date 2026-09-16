@@ -257,6 +257,37 @@ test("buildClaudeCodeCompatibleRequest can request summarized thinking display",
   assert.deepEqual(disabledThinking.thinking, { type: "disabled" });
 });
 
+test("buildClaudeCodeCompatibleRequest honors Responses reasoning.summary", () => {
+  const summarized = buildClaudeCodeCompatibleRequest({
+    sourceBody: {
+      reasoning: { effort: "high", summary: "auto" },
+    },
+    normalizedBody: {
+      messages: [{ role: "user", content: "hello" }],
+    },
+    model: "claude-opus-4-8",
+    cwd: "/tmp/claude-code-compatible",
+    now: new Date("2026-01-02T12:00:00.000Z"),
+  });
+  assert.deepEqual(summarized.thinking, {
+    type: "adaptive",
+    display: "summarized",
+  });
+
+  const disabledSummary = buildClaudeCodeCompatibleRequest({
+    sourceBody: {
+      reasoning: { effort: "high", summary: "none" },
+    },
+    normalizedBody: {
+      messages: [{ role: "user", content: "hello" }],
+    },
+    model: "claude-opus-4-8",
+    cwd: "/tmp/claude-code-compatible",
+    now: new Date("2026-01-02T12:00:00.000Z"),
+  });
+  assert.deepEqual(disabledSummary.thinking, { type: "adaptive" });
+});
+
 test("buildClaudeCodeCompatibleRequest does not duplicate an existing default system skeleton", () => {
   const payload = buildClaudeCodeCompatibleRequest({
     claudeBody: {

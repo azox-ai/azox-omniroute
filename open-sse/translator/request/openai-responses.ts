@@ -800,18 +800,20 @@ export function openaiResponsesToOpenAIRequest(
   // Promote Responses `reasoning.effort` to the Chat-Completions-native
   // `reasoning_effort` field so OpenAI-family upstreams (and the downstream
   // openai-to-claude translator's extended-thinking path) keep the hint when a
-  // Responses client is routed across formats. The Copilot-only `summary` ->
-  // Claude summarized-thinking marker stays behind the UA gate from
-  // translateRequest because it is Copilot-specific glue, not an OpenAI-native
-  // field. Ported from upstream PR decolua/9router#1817 (ryanngit).
+  // Responses client is routed across formats. An explicit Responses `summary`
+  // request also has to survive the OpenAI-format pivot when the resolved target
+  // is Claude; the next translator consumes the internal marker and maps it to
+  // `thinking.display: "summarized"`. Keep the Copilot branch for direct legacy
+  // callers that do not pass `_targetFormat`.
   if (root.reasoning && typeof root.reasoning === "object" && !Array.isArray(root.reasoning)) {
     const reasoningRec = toRecord(root.reasoning);
     const effort = toString(reasoningRec.effort);
     if (effort && result.reasoning_effort === undefined) {
       result.reasoning_effort = normalizeResponsesReasoningEffort(effort, model ?? root.model);
     }
+    const targetsClaude = credentialRecord._targetFormat === FORMATS.CLAUDE;
     if (
-      credentialRecord._copilotClient === true &&
+      (targetsClaude || credentialRecord._copilotClient === true) &&
       shouldRequestClaudeSummarizedThinking(reasoningRec.summary)
     ) {
       result[COPILOT_REASONING_SUMMARY_MARKER] = "summarized";
