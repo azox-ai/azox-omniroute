@@ -692,3 +692,25 @@ test("deadline token registry returns to its original size after N requests", as
     "a released token must not resolve through the header fallback"
   );
 });
+
+// Next.js hands the route a NextRequest whose `Request` came from its own
+// bundled undici copy. Rebuilding it with the ambient global constructor reads
+// undici's private `#state`, which throws `Cannot read private member #state
+// from an object whose class did not declare it` and turns every chat and
+// responses request into a 500. Rebuild from URL + init instead.
+test("withDeadlineSignal accepts a Request built by a foreign fetch realm", async () => {
+  const { Request: UndiciRequest } = await import("undici");
+  const foreign = new UndiciRequest("http://localhost/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "m", stream: true }),
+  }) as unknown as Request;
+
+  const { wrappedReq, deadlineController } = withDeadlineSignal(foreign);
+
+  assert.equal(wrappedReq.method, "POST");
+  assert.equal(wrappedReq.url, "http://localhost/v1/chat/completions");
+  assert.equal(wrappedReq.headers.get("content-type"), "application/json");
+  assert.equal(await wrappedReq.text(), JSON.stringify({ model: "m", stream: true }));
+  assert.equal(getDeadlineController(wrappedReq), deadlineController);
+});
