@@ -17,6 +17,8 @@ import { SSE_HEARTBEAT_INTERVAL_MS } from "@omniroute/open-sse/config/constants"
 import { resolveStreamFlag } from "@omniroute/open-sse/utils/aiSdkCompat";
 import { errorResponse } from "@omniroute/open-sse/utils/error";
 import {
+  getDeadlineController,
+  withDeadlineSignal,
   withEarlyStreamKeepalive,
   OPENAI_RESPONSES_ERROR_FRAME,
 } from "@omniroute/open-sse/utils/earlyStreamKeepalive";
@@ -98,6 +100,10 @@ export async function withCodexPreferredModel(
  * Handled by the unified chat handler (openai-responses format auto-detected).
  */
 async function postHandler(request: any) {
+  // Deadline wrap first so admission, model rewrite, parse, handleChat and lease
+  // release all observe the combined signal (client abort OR deadline abort).
+  const { wrappedReq: deadlineReq } = withDeadlineSignal(request);
+  request = deadlineReq;
   const sessionId = resolveSessionId(request);
   const admissionResult = await admitChatRequest(request, {
     sessionId,
@@ -108,7 +114,7 @@ async function postHandler(request: any) {
   const admission = admissionResult;
   request = admission.request;
   const finishAdmission = (response: Response) =>
-    releaseChatAdmissionWhenDone(response, admission.lease);
+    releaseChatAdmissionWhenDone(response, admission.lease, { signal: request.signal });
 
   try {
     let parsedBody;
@@ -187,7 +193,8 @@ async function postHandler(request: any) {
       const correlationId = generateRequestId();
       const handlerResponse = releaseChatAdmissionAfterHandler(
         handleChat(resolved, null, resolvedBody, correlationId),
-        admission.lease
+        admission.lease,
+        { signal: request.signal }
       );
       return await withEarlyStreamKeepalive(handlerResponse, {
         signal: request.signal,
@@ -199,6 +206,7 @@ async function postHandler(request: any) {
         },
         errorFrame: OPENAI_RESPONSES_ERROR_FRAME,
         correlationId,
+        deadlineController: getDeadlineController(request),
       });
     }
 

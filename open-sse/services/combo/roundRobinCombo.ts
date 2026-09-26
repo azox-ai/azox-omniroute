@@ -12,9 +12,12 @@ import {
   errorResponse,
   unavailableResponse,
   errorResponseWithComboDiagnostics,
+  logRetryHintUnreadable,
+  readProseRetryAfter,
 } from "../../utils/error.ts";
 import { buildRecoveryHint } from "./pinRecovery.ts";
 import { formatExhaustedConnectionKey } from "./comboDiagFormat.ts";
+import { collectQuotaWindowExclusions, formatQuotaSkipMessage } from "./quotaSkipDiagnostics.ts";
 import { recordComboRequest } from "../comboMetrics.ts";
 import {
   expandComboSystemPromptIfPresent,
@@ -37,7 +40,6 @@ import {
   resolveDisableSessionStickiness,
 } from "./sessionStickiness.ts";
 import { makeConnectionConcurrencyResolver } from "./concurrencyCaps.ts";
-import { getCachedProviderConnectionById } from "../../../src/lib/db/readCache.ts";
 import { orderTargetsByEvalScores } from "../evalRouting.ts";
 import {
   applyPromptCacheAffinity,
@@ -81,6 +83,7 @@ import {
 import {
   TRANSIENT_FOR_SEMAPHORE,
   MAX_FALLBACK_WAIT_MS,
+  classifyQualityFailure,
   COMBO_LOOP_SAFETY_TIMEOUT_MS,
   isAllAccountsRateLimitedResponse,
   clampComboDepth,
@@ -89,14 +92,19 @@ import {
   resolveDelayMs,
   comboModelNotFoundResponse,
   isStreamReadinessFailureErrorBody,
-  isTokenLimitBreachErrorBody,
+  isLocalKeyPolicyBreachErrorBody,
   isLocalQueueCapacityErrorBody,
   toRecordedTarget,
   getExhaustedTargetSkipReason,
+  requestScopedReplayKey,
+  resolvePersistedConnectionCooldownSkipReason,
 } from "./comboPredicates.ts";
+import { handlePreContentStreamRetry } from "./executeTargetClassify.ts";
+import { getCachedProviderConnectionById } from "../../../src/lib/db/readCache.ts";
 import { applyComboTargetExhaustion } from "./targetExhaustion.ts";
 import { isRetryAfterEligibleStatus } from "./unavailableRetryGate.ts";
 import { isRecord } from "./comboData.ts";
+import { createRRDashboardEvents } from "./rrDashboardEvents.ts";
 import { attemptCompatRejectedFallback } from "./comboCompatFallback.ts";
 import { applyRequestTagRouting } from "./autoStrategy.ts";
 import {
@@ -111,23 +119,8 @@ import {
   resolveComboTargets,
 } from "./comboStructure.ts";
 import { releaseStickyPinOnFailure, clearStaleLKGP } from "../combo.ts";
-
-/** Per-connection TPM budget for quota reservation. Undefined = store keeps prior limit. */
-async function resolveTargetTokenLimit(target: {
-  connectionId?: string | null;
-}): Promise<number | undefined> {
-  const connectionId = target?.connectionId;
-  if (!connectionId) return undefined;
-  try {
-    const connection = await getCachedProviderConnectionById(connectionId);
-    const overrides = (connection as { rateLimitOverrides?: Record<string, number> | null } | null)
-      ?.rateLimitOverrides;
-    const tpm = overrides?.tpm;
-    return typeof tpm === "number" && tpm > 0 ? tpm : undefined;
-  } catch {
-    return undefined;
-  }
-}
+import { resolveComboDailyReset } from "./comboDailyResetClock.ts";
+import { resolveTargetTokenLimit } from "./targetTokenLimit.ts";
 
 /**
  * Handle round-robin combo: each request goes to the next model in circular order.
@@ -325,7 +318,9 @@ export async function handleRoundRobinCombo({
             rawModel &&
             isModelLocked(stickyTarget.provider, stickyTarget.connectionId || "", rawModel)
           ) &&
-          (isModelAvailable ? await isModelAvailable(stickyTarget.modelStr, stickyTarget) : true);
+          (isModelAvailable
+            ? (await isModelAvailable(stickyTarget.modelStr, stickyTarget)) === true
+            : true);
         if (!stickyAvailable) {
           log.info(
             "COMBO-RR",
@@ -471,6 +466,7 @@ export async function handleRoundRobinCombo({
   const exhaustedProviders = new Set<string>();
   const exhaustedConnections = new Set<string>();
   const transientRateLimitedProviders = new Set<string>();
+  const rejectedModelKeys = new Set<string>(); // same-model targets after a request-scoped refusal
 
   // Try each model starting from the round-robin target
   try {
@@ -481,23 +477,58 @@ export async function handleRoundRobinCombo({
       const target = filteredTargets[modelIndex];
       const modelStr = target.modelStr;
       const provider = target.provider;
+      if (rejectedModelKeys.has(requestScopedReplayKey(modelStr))) {
+        log.info("COMBO-RR", `Skipping ${modelStr} — same request already refused request-scoped`);
+        if (offset > 0) fallbackCount++;
+        continue;
+      }
+      const rrEvents = createRRDashboardEvents(combo.name, modelIndex, provider, modelStr);
       const profile = await getRuntimeProviderProfile(provider);
       const semaphoreKey = `combo:${combo.name}:${target.executionKey}`;
-      const allowRateLimitedConnection =
+      let allowRateLimitedConnection =
         Boolean(provider && provider !== "unknown") && transientRateLimitedProviders.has(provider);
+      if (allowRateLimitedConnection && target.connectionId) {
+        const persistedSkip = await resolvePersistedConnectionCooldownSkipReason(
+          target,
+          (id) => getCachedProviderConnectionById(id),
+          allowRateLimitedConnection
+        );
+        if (persistedSkip) {
+          log.info("COMBO-RR", persistedSkip);
+          clearStaleLKGP(
+            combo.name,
+            target.executionKey,
+            combo.id,
+            log,
+            "COMBO-RR",
+            undefined,
+            target
+          );
+          if (offset > 0) fallbackCount++;
+          continue;
+        }
+      }
       const targetForAttempt = allowRateLimitedConnection
-        ? { ...target, allowRateLimitedConnection: true }
-        : target;
+        ? { ...target, allowRateLimitedConnection: true, fallbackAttempts: offset }
+        : { ...target, fallbackAttempts: offset };
 
       // Pre-check availability
       if (isModelAvailable) {
         const available = await isModelAvailable(modelStr, targetForAttempt);
-        if (!available) {
+        if (available !== true) {
           log.debug?.(
             "COMBO-RR",
             `Skipping ${modelStr} — no credentials available or model excluded`
           );
-          clearStaleLKGP(combo.name, target.executionKey, combo.id, log, "COMBO-RR");
+          clearStaleLKGP(
+            combo.name,
+            target.executionKey,
+            combo.id,
+            log,
+            "COMBO-RR",
+            undefined,
+            target
+          );
           if (offset > 0) fallbackCount++;
           continue;
         }
@@ -513,7 +544,15 @@ export async function handleRoundRobinCombo({
         )
       ) {
         log.info("COMBO-RR", `Skipping ${modelStr} — provider ${provider} in global cooldown`);
-        clearStaleLKGP(combo.name, target.executionKey, combo.id, log, "COMBO-RR");
+        clearStaleLKGP(
+          combo.name,
+          target.executionKey,
+          combo.id,
+          log,
+          "COMBO-RR",
+          undefined,
+          target
+        );
         if (offset > 0) fallbackCount++;
         continue;
       }
@@ -526,7 +565,15 @@ export async function handleRoundRobinCombo({
       );
       if (exhaustedSkip) {
         log.info("COMBO-RR", exhaustedSkip);
-        clearStaleLKGP(combo.name, target.executionKey, combo.id, log, "COMBO-RR");
+        clearStaleLKGP(
+          combo.name,
+          target.executionKey,
+          combo.id,
+          log,
+          "COMBO-RR",
+          undefined,
+          target
+        );
         if (offset > 0) fallbackCount++;
         continue;
       }
@@ -642,6 +689,7 @@ export async function handleRoundRobinCombo({
             fingerprint: resolveTargetFingerprint(target) ?? "",
           });
 
+          rrEvents.attempt();
           const result = await Promise.race([
             handleSingleModel(attemptBody, modelStr, {
               ...targetForAttempt,
@@ -705,6 +753,7 @@ export async function handleRoundRobinCombo({
                   rrSelectedConnectionId || target.connectionId
                 );
               }
+              rrEvents.failed(`Quality: ${quality.reason}`, Date.now() - startTime);
               recordComboRequest(combo.name, modelStr, {
                 success: false,
                 latencyMs: Date.now() - startTime,
@@ -715,14 +764,21 @@ export async function handleRoundRobinCombo({
               recordedAttempts++;
               // Fix #1707: Set terminal state so the fallback doesn't emit
               // misleading ALL_ACCOUNTS_INACTIVE when the real issue is quality.
+              const qualityFailure = classifyQualityFailure(quality);
+              if (qualityFailure.requestScoped)
+                rejectedModelKeys.add(requestScopedReplayKey(modelStr));
               lastError = `Upstream response failed quality validation: ${quality.reason}`;
-              lastStatus = 502;
+              lastStatus = qualityFailure.status;
               rrOutcomes.push({
                 model: modelStr,
-                status: 502,
+                status: qualityFailure.status,
                 error: quality.reason || "upstream response failed quality validation",
-                kind: "quality",
+                kind: qualityFailure.kind,
               });
+              if (
+                handlePreContentStreamRetry(quality, retry, { maxRetries, signal, log }, modelStr)
+              )
+                continue;
               if (offset > 0) fallbackCount++;
               break; // move to next model
             }
@@ -731,6 +787,7 @@ export async function handleRoundRobinCombo({
               "COMBO-RR",
               `${modelStr} succeeded (${latencyMs}ms, ${fallbackCount} fallbacks)`
             );
+            rrEvents.succeeded(latencyMs);
             recordComboRequest(combo.name, modelStr, {
               success: true,
               latencyMs,
@@ -810,10 +867,12 @@ export async function handleRoundRobinCombo({
           let errorText = result.statusText || "";
           let retryAfter: ComboRetryAfter | null = null;
           let errorBody: ComboErrorBody = null;
+          let bodyText = "";
           try {
             const cloned = result.clone();
             try {
               const text = await cloned.text();
+              bodyText = text;
               if (text) {
                 errorText = text.substring(0, 500);
                 errorBody = JSON.parse(text);
@@ -826,17 +885,19 @@ export async function handleRoundRobinCombo({
                 retryAfter = errorBody?.retryAfter || null;
               }
             } catch {
-              /* Clone parse failed */
+              logRetryHintUnreadable(log, "COMBO-RR", modelStr, result.status, "unparseable body");
             }
           } catch {
-            /* Clone failed */
+            logRetryHintUnreadable(log, "COMBO-RR", modelStr, result.status, "clone failed");
           }
+          retryAfter ||= readProseRetryAfter(bodyText); // #13672 opt-in prose hints
 
           if (result.status === 499) {
             log.info(
               "COMBO-RR",
               `Client disconnected (499) during ${modelStr} — stopping combo loop`
             );
+            rrEvents.failed("Client disconnected", Date.now() - startTime);
             recordComboRequest(combo.name, modelStr, {
               success: false,
               latencyMs: Date.now() - startTime,
@@ -869,7 +930,7 @@ export async function handleRoundRobinCombo({
 
           // FIX 5: a local per-API-key token-limit 429 must not cool shared accounts.
           const isTokenLimitBreach =
-            result.status === 429 && isTokenLimitBreachErrorBody(errorBody);
+            result.status === 429 && isLocalKeyPolicyBreachErrorBody(errorBody);
           const isLocalQueueCapacity = isLocalQueueCapacityErrorBody(errorBody);
 
           if (isLocalQueueCapacity) {
@@ -877,6 +938,7 @@ export async function handleRoundRobinCombo({
               "COMBO-RR",
               `Local rate-limit queue capacity reached for ${modelStr} — returning without upstream fallback`
             );
+            rrEvents.failed(errorText || "Local queue full", Date.now() - startTime);
             recordComboRequest(combo.name, modelStr, {
               success: false,
               latencyMs: Date.now() - startTime,
@@ -920,7 +982,9 @@ export async function handleRoundRobinCombo({
             provider,
             result.headers,
             profile,
-            structuredError
+            structuredError,
+            null,
+            await resolveComboDailyReset(provider)
           );
           const { cooldownMs } = fallbackResult;
           const selectedConnectionId =
@@ -967,7 +1031,15 @@ export async function handleRoundRobinCombo({
             exhaustedConnections.has(`${provider}:${targetWithConnection.connectionId}`) ||
             (provider && exhaustedProviders.has(provider))
           ) {
-            clearStaleLKGP(combo.name, target.executionKey, combo.id, log, "COMBO-RR");
+            clearStaleLKGP(
+              combo.name,
+              target.executionKey,
+              combo.id,
+              log,
+              "COMBO-RR",
+              undefined,
+              target
+            );
           }
 
           // Transient errors → mark in semaphore so round-robin stops stampeding this target.
@@ -1014,6 +1086,7 @@ export async function handleRoundRobinCombo({
           }
 
           // Done with this model
+          rrEvents.failed(errorText || `HTTP ${result.status}`, Date.now() - startTime);
           recordComboRequest(combo.name, modelStr, {
             success: false,
             latencyMs: Date.now() - startTime,
@@ -1024,7 +1097,15 @@ export async function handleRoundRobinCombo({
           // LKGP (#919) mirror of handleComboChat's failure-path clear above — see
           // that comment for why this must happen (nothing else clears a pin left
           // by a request-scoped failure class like a stream-readiness timeout).
-          clearStaleLKGP(combo.name, target.executionKey, combo.id, log, "COMBO-RR");
+          clearStaleLKGP(
+            combo.name,
+            target.executionKey,
+            combo.id,
+            log,
+            "COMBO-RR",
+            undefined,
+            target
+          );
           recordedAttempts++;
           lastError = errorText || String(result.status);
           lastStatus = result.status;
@@ -1152,16 +1233,21 @@ export async function handleRoundRobinCombo({
 
   if (!lastStatus) {
     if (recordedAttempts === 0) {
-      return new Response(
-        JSON.stringify({
-          error: {
-            message:
-              "Service temporarily unavailable: all targets were skipped by pre-dispatch filters",
-            type: "service_unavailable",
-            code: "ALL_TARGETS_SKIPPED",
-          },
-        }),
-        { status: 503, headers: { "Content-Type": "application/json" } }
+      const quotaExcluded = collectQuotaWindowExclusions(filteredTargets);
+      const quotaSkip = formatQuotaSkipMessage(quotaExcluded);
+      return errorResponseWithComboDiagnostics(
+        503,
+        quotaSkip
+          ? `Service temporarily unavailable: all targets were skipped by pre-dispatch filters (${quotaSkip})`
+          : "Service temporarily unavailable: all targets were skipped by pre-dispatch filters",
+        {
+          poolSize: filteredTargets.length,
+          attempted: 0,
+          excluded: quotaExcluded,
+          attemptOrder: [],
+          terminalReason: "all_targets_skipped",
+        },
+        { code: "ALL_TARGETS_SKIPPED", type: "service_unavailable" }
       );
     }
     return new Response(

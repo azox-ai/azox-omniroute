@@ -252,6 +252,14 @@ export function ensureCallLogsColumns(db: SqliteDatabase) {
       db.exec("ALTER TABLE call_logs ADD COLUMN correlation_id TEXT DEFAULT NULL");
       console.log("[DB] Added call_logs.correlation_id column");
     }
+    if (!columnNames.has("added_wait_ms")) {
+      db.exec("ALTER TABLE call_logs ADD COLUMN added_wait_ms INTEGER DEFAULT NULL");
+      console.log("[DB] Added call_logs.added_wait_ms column");
+    }
+    if (!columnNames.has("added_wait_cause")) {
+      db.exec("ALTER TABLE call_logs ADD COLUMN added_wait_cause TEXT DEFAULT NULL");
+      console.log("[DB] Added call_logs.added_wait_cause column");
+    }
     if (!columnNames.has("model_pinned")) {
       db.exec("ALTER TABLE call_logs ADD COLUMN model_pinned INTEGER DEFAULT 0");
       console.log("[DB] Added call_logs.model_pinned column");
@@ -260,11 +268,55 @@ export function ensureCallLogsColumns(db: SqliteDatabase) {
       db.exec("ALTER TABLE call_logs ADD COLUMN session_tag TEXT DEFAULT NULL");
       console.log("[DB] Added call_logs.session_tag column");
     }
+    // added by 188_call_logs_reasoning_encrypted; back-filled here for
+    // lineages that skipped the migration file — the call-log write path
+    // references these columns on every insert.
+    if (!columnNames.has("reasoning_duration_ms")) {
+      db.exec("ALTER TABLE call_logs ADD COLUMN reasoning_duration_ms INTEGER DEFAULT NULL");
+      console.log("[DB] Added call_logs.reasoning_duration_ms column");
+    }
+    if (!columnNames.has("reasoning_effort_requested")) {
+      db.exec("ALTER TABLE call_logs ADD COLUMN reasoning_effort_requested TEXT DEFAULT NULL");
+      console.log("[DB] Added call_logs.reasoning_effort_requested column");
+    }
+    if (!columnNames.has("reasoning_effort_upstream")) {
+      db.exec("ALTER TABLE call_logs ADD COLUMN reasoning_effort_upstream TEXT DEFAULT NULL");
+      console.log("[DB] Added call_logs.reasoning_effort_upstream column");
+    }
+    if (!columnNames.has("reasoning_encrypted")) {
+      db.exec("ALTER TABLE call_logs ADD COLUMN reasoning_encrypted INTEGER DEFAULT NULL");
+      console.log("[DB] Added call_logs.reasoning_encrypted column");
+    }
+    // added by 190_call_logs_content_provenance; back-filled here for
+    // lineages that skipped the migration file — the call-log write path
+    // references these columns on every insert.
+    if (!columnNames.has("has_content")) {
+      db.exec("ALTER TABLE call_logs ADD COLUMN has_content INTEGER DEFAULT NULL");
+      console.log("[DB] Added call_logs.has_content column");
+    }
+    if (!columnNames.has("usage_provenance")) {
+      db.exec("ALTER TABLE call_logs ADD COLUMN usage_provenance TEXT DEFAULT NULL");
+      console.log("[DB] Added call_logs.usage_provenance column");
+    }
+    // added by 191_call_logs_resilience_actions; back-filled here for
+    // lineages that skipped the migration file — the call-log write path
+    // references this column on every insert (guarded by hasCallLogsColumn,
+    // but the heal keeps old databases queryable without the guard).
+    if (!columnNames.has("resilience_actions")) {
+      db.exec("ALTER TABLE call_logs ADD COLUMN resilience_actions TEXT DEFAULT NULL");
+      console.log("[DB] Added call_logs.resilience_actions column");
+    }
 
     db.exec(
       "CREATE INDEX IF NOT EXISTS idx_call_logs_requested_model ON call_logs(requested_model)"
     );
     db.exec("CREATE INDEX IF NOT EXISTS idx_call_logs_request_type ON call_logs(request_type)");
+    // #12832's provider-stats index. It lives here rather than in SCHEMA_SQL because
+    // SCHEMA_SQL runs before this healing pass: on a legacy call_logs table that
+    // predates `request_type` the CREATE INDEX aborts the whole schema exec.
+    db.exec(
+      "CREATE INDEX IF NOT EXISTS idx_cl_request_provider ON call_logs(request_type, provider)"
+    );
     db.exec(
       "CREATE INDEX IF NOT EXISTS idx_cl_combo_target ON call_logs(combo_name, combo_execution_key, timestamp)"
     );
@@ -285,6 +337,30 @@ export function ensureProxyLogsColumns(db: SqliteDatabase) {
     if (!columnNames.has("egress_ip")) {
       db.exec("ALTER TABLE proxy_logs ADD COLUMN egress_ip TEXT");
       console.log("[DB] Added proxy_logs.egress_ip column");
+    }
+    if (!columnNames.has("upstream_status")) {
+      db.exec("ALTER TABLE proxy_logs ADD COLUMN upstream_status INTEGER");
+      console.log("[DB] Added proxy_logs.upstream_status column");
+    }
+    if (!columnNames.has("proxy_name")) {
+      db.exec("ALTER TABLE proxy_logs ADD COLUMN proxy_name TEXT");
+      console.log("[DB] Added proxy_logs.proxy_name column");
+    }
+    if (!columnNames.has("rotation_account")) {
+      db.exec("ALTER TABLE proxy_logs ADD COLUMN rotation_account TEXT");
+      console.log("[DB] Added proxy_logs.rotation_account column");
+    }
+    if (!columnNames.has("correlation_id")) {
+      db.exec("ALTER TABLE proxy_logs ADD COLUMN correlation_id TEXT");
+      console.log("[DB] Added proxy_logs.correlation_id column");
+    }
+    if (!columnNames.has("attempt_number")) {
+      db.exec("ALTER TABLE proxy_logs ADD COLUMN attempt_number INTEGER");
+      console.log("[DB] Added proxy_logs.attempt_number column");
+    }
+    if (!columnNames.has("attempt_issue")) {
+      db.exec("ALTER TABLE proxy_logs ADD COLUMN attempt_issue TEXT");
+      console.log("[DB] Added proxy_logs.attempt_issue column");
     }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

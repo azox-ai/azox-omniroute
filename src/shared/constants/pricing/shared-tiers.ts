@@ -1,6 +1,16 @@
 /**
  * Pricing data — shared per-MTok tier constants (god-file decomposition). Pure data; merged by the barrel.
  */
+// OpenAI API Standard; Codex Standard has the same dollar-equivalent rates.
+// https://openai.com/index/gpt-6-astra/
+export const GPT_6_ASTRA_PRICING = {
+  input: 10.0,
+  output: 50.0,
+  cached: 1.0,
+  reasoning: 50.0,
+  cache_creation: 12.5,
+};
+
 export const GPT_5_3_CODEX_PRICING = {
   input: 5.0,
   output: 20.0,
@@ -66,6 +76,14 @@ export const CLAUDE_FABLE_5_1_PRICING = {
   cached: 0.25,
   reasoning: 50.0,
   cache_creation: 12.5,
+};
+
+export const CLAUDE_OPUS_5_5_PRICING = {
+  input: 4.0,
+  output: 20.0,
+  cached: 0.2,
+  reasoning: 20.0,
+  cache_creation: 5.0,
 };
 
 export const CLAUDE_OPUS_5_PRICING = {
