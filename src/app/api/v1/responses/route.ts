@@ -190,8 +190,8 @@ async function postHandler(request: any) {
     const accept = String(request.headers?.get?.("accept") || "");
     const wantsStreaming = resolveStreamFlag(resolvedBody?.stream, accept, "openai-responses");
     const correlationId =
-      resolveIncomingCorrelationId(request.headers.get("x-correlation-id")) ??
       resolveIncomingCorrelationId(request.headers.get("x-request-id")) ??
+      resolveIncomingCorrelationId(request.headers.get("x-correlation-id")) ??
       generateRequestId();
     if (wantsStreaming) {
       const thresholdMs = resolveKeepaliveThreshold(resolvedBody?.model);
