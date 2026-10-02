@@ -5,6 +5,7 @@ import { createInjectionGuard } from "@/middleware/promptInjectionGuard";
 import { resolveResponsesApiModel } from "@/app/api/internal/codex-responses-ws/modelResolution";
 import { getModelInfo, getComboForModel } from "@/sse/services/model";
 import { generateRequestId } from "@/shared/utils/requestId";
+import { resolveIncomingCorrelationId } from "@/shared/utils/correlationPreserve.ts";
 import {
   admitChatRequest,
   admitChatStructure,
@@ -188,9 +189,12 @@ async function postHandler(request: any) {
     );
     const accept = String(request.headers?.get?.("accept") || "");
     const wantsStreaming = resolveStreamFlag(resolvedBody?.stream, accept, "openai-responses");
+    const correlationId =
+      resolveIncomingCorrelationId(request.headers.get("x-correlation-id")) ??
+      resolveIncomingCorrelationId(request.headers.get("x-request-id")) ??
+      generateRequestId();
     if (wantsStreaming) {
       const thresholdMs = resolveKeepaliveThreshold(resolvedBody?.model);
-      const correlationId = generateRequestId();
       const handlerResponse = releaseChatAdmissionAfterHandler(
         handleChat(resolved, null, resolvedBody, correlationId),
         admission.lease,
@@ -210,7 +214,7 @@ async function postHandler(request: any) {
       });
     }
 
-    return finishAdmission(await handleChat(resolved, null, resolvedBody));
+    return finishAdmission(await handleChat(resolved, null, resolvedBody, correlationId));
   } catch (error) {
     admission.lease?.release();
     throw error;

@@ -104,6 +104,7 @@ import {
   isEarlyEofSiblingFailoverOn,
   withSessionHeader,
   withSelectedConnectionHeader,
+  withAffinityTraceHeaders,
   withCorrelationId,
   withModalityBridgeHeader,
   withConversationId,
@@ -1334,7 +1335,14 @@ async function handleChatImplementation(
     }
     return withModalityBridgeHeader(
       withConversationId(
-        withCorrelationId(withSessionHeader(response, sessionId), reqId),
+        withCorrelationId(
+          withAffinityTraceHeaders(
+            withSessionHeader(response, sessionId),
+            sessionAffinityKey,
+            reqId
+          ),
+          reqId
+        ),
         conversationId
       ),
       modalityBridgeHeader
