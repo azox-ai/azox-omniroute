@@ -1057,14 +1057,25 @@ test("web_search fallback executes stream:true responses requests non-streaming 
       },
     })
   );
-  const json = (await response.json()) as {
-    output: Array<Record<string, unknown>>;
-  };
-  const webSearchCall = json.output.find((item) => item.type === "web_search_call");
-  const functionCall = json.output.find((item) => item.type === "function_call");
-  const functionCallOutput = json.output.find((item) => item.type === "function_call_output");
-
   assert.equal(response.status, 200);
+  assert.match(response.headers.get("Content-Type") || "", /text\/event-stream/);
+  const sse = await response.text();
+  const completed = sse
+    .split("\n\n")
+    .filter((chunk) => chunk.startsWith("event: response.completed\n"))
+    .map(
+      (chunk) =>
+        JSON.parse(chunk.split("\n")[1].slice(6)) as {
+          response: { output: Array<Record<string, unknown>> };
+        }
+    );
+  assert.equal(completed.length, 1, "stream must terminate successfully exactly once");
+  assert.match(sse, /data: \[DONE\]/);
+  const output = completed[0].response.output;
+  const webSearchCall = output.find((item) => item.type === "web_search_call");
+  const functionCall = output.find((item) => item.type === "function_call");
+  const functionCallOutput = output.find((item) => item.type === "function_call_output");
+
   // The upstream must have been called non-streaming so interception can run.
   assert.equal(upstreamBodies.length, 1);
   assert.equal(upstreamBodies[0].stream, false);
