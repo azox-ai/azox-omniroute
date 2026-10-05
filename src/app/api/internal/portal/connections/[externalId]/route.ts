@@ -11,13 +11,23 @@ import { buildPortalRecoveryUpdate } from "@/lib/providers/portalManagedConnecti
 
 const ALLOWED_PROVIDERS = new Set(["claude", "codex"]);
 
-async function findManagedConnection(externalId: string) {
+type Connection = Awaited<ReturnType<typeof getProviderConnections>>[number];
+type ManagedConnection = Connection & { id: string; providerSpecificData: Record<string, unknown> };
+
+function portalData(connection: Connection): Record<string, unknown> {
+  const data = connection.providerSpecificData;
+  return data && typeof data === "object" && !Array.isArray(data)
+    ? (data as Record<string, unknown>)
+    : {};
+}
+
+async function findManagedConnection(externalId: string): Promise<ManagedConnection | null> {
   const connections = await getProviderConnections();
-  return (
-    connections.find(
-      (connection) => connection.providerSpecificData?.portalExternalId === externalId
-    ) || null
+  const match = connections.find(
+    (connection) =>
+      typeof connection.id === "string" && portalData(connection).portalExternalId === externalId
   );
+  return match ? (match as ManagedConnection) : null;
 }
 
 function unauthorized() {

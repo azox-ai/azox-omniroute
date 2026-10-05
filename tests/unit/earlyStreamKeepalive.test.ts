@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { withEarlyStreamKeepalive } from "../../open-sse/utils/earlyStreamKeepalive.ts";
+import {
+  OPENAI_RESPONSES_ERROR_FRAME,
+  withEarlyStreamKeepalive,
+} from "../../open-sse/utils/earlyStreamKeepalive.ts";
 
 const ENCODER = new TextEncoder();
 const DECODER = new TextDecoder();
@@ -69,59 +72,88 @@ test("slow path forwards SSE stream content", async () => {
 
 // ── Upstream error with 0 bytes → error frame emitted ─────────────────────
 
-test("upstream error with 0 bytes forwarded emits error frame", { skip: true, todo: "ReadableStream error simulation hangs in Node.js test runner" }, async () => {
-  // Use a TransformStream where we error the writable side
-  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
-  const writer = writable.getWriter();
-  writer.releaseLock();
-  writable.abort(new Error("upstream died")).catch(() => {});
-
-  const response = new Response(readable, {
+test("upstream error with 0 bytes forwarded emits error frame", async () => {
+  const response = new Response(streamThenError([]), {
     status: 200,
     headers: { "content-type": "text/event-stream" },
   });
-
-  const delayed = new Promise<Response>((resolve) => setTimeout(() => resolve(response), 10));
-
-  const result = await withEarlyStreamKeepalive(delayed, {
-    thresholdMs: 10,
-    intervalMs: 50,
-  });
-
+  const delayed = new Promise<Response>((resolve) => setTimeout(() => resolve(response), 20));
+  const result = await withEarlyStreamKeepalive(delayed, { thresholdMs: 1 });
   assert.equal(result.status, 200);
   const text = await drainStream(result.body!);
-  assert.ok(text.includes("Upstream stream failed before completion"), "should contain error frame");
+  assert.match(text, /Upstream stream failed before completion/);
 });
 
-// ── Upstream error after partial content → NO error frame ──────────────────
+// ── Upstream error after partial content → terminal failure ──────────────
 
-test("upstream error after partial content does NOT emit error frame", { skip: true, todo: "ReadableStream error simulation hangs in Node.js test runner" }, async () => {
-  // Use a TransformStream where we send one chunk then error
-  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
-  const writer = writable.getWriter();
-  await writer.write(ENCODER.encode('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'));
-  writer.releaseLock();
-  writable.abort(new Error("upstream died mid-stream")).catch(() => {});
-
-  const response = new Response(readable, {
-    status: 200,
-    headers: { "content-type": "text/event-stream" },
+function streamThenError(chunks: string[]): ReadableStream<Uint8Array> {
+  let index = 0;
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (index < chunks.length) controller.enqueue(ENCODER.encode(chunks[index++]));
+      else controller.error(new Error("upstream token=secret died mid-stream"));
+    },
   });
+}
 
-  const delayed = new Promise<Response>((resolve) => setTimeout(() => resolve(response), 10));
-
-  const result = await withEarlyStreamKeepalive(delayed, {
-    thresholdMs: 10,
-    intervalMs: 50,
-  });
-
-  assert.equal(result.status, 200);
-  const text = await drainStream(result.body!);
-  assert.ok(text.includes("partial"), "should contain forwarded content");
-  assert.ok(
-    !text.includes("Upstream stream failed"),
-    "should NOT contain error frame after partial content"
+test("Responses slow path emits one sanitized response.failed after partial content", async () => {
+  const response = new Response(
+    streamThenError([
+      'event: response.created\ndata: {"type":"response.created","response":{"id":"resp_1"}}\n\n',
+      'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"partial"}\n\n',
+    ]),
+    { headers: { "content-type": "text/event-stream" } }
   );
+  const delayed = new Promise<Response>((resolve) => setTimeout(() => resolve(response), 20));
+  const result = await withEarlyStreamKeepalive(delayed, {
+    thresholdMs: 1,
+    intervalMs: 50,
+    errorFrame: OPENAI_RESPONSES_ERROR_FRAME,
+  });
+  const text = await drainStream(result.body!);
+  assert.match(text, /"delta":"partial"/);
+  assert.equal((text.match(/event: response.failed/g) || []).length, 1);
+  const failed = JSON.parse(text.match(/event: response.failed\ndata: ([^\n]+)/)![1]);
+  assert.equal(failed.type, "response.failed");
+  assert.equal(failed.response.status, "failed");
+  assert.equal(failed.response.error.code, "stream_disconnected");
+  assert.doesNotMatch(text, /token=secret/);
+});
+
+test("Responses slow path reports a clean EOF without a terminal event", async () => {
+  const response = new Response(
+    makeSseStream([
+      'event: response.created\ndata: {"type":"response.created"}\n\n',
+      'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"partial"}\n\n',
+    ]),
+    { headers: { "content-type": "text/event-stream" } }
+  );
+  const delayed = new Promise<Response>((resolve) => setTimeout(() => resolve(response), 20));
+  const result = await withEarlyStreamKeepalive(delayed, {
+    thresholdMs: 1,
+    errorFrame: OPENAI_RESPONSES_ERROR_FRAME,
+  });
+  const text = await drainStream(result.body!);
+  assert.equal((text.match(/event: response.failed/g) || []).length, 1);
+  assert.match(text, /"delta":"partial"/);
+});
+
+test("Responses slow path does not append failure after a terminal event", async () => {
+  const response = new Response(
+    streamThenError([
+      'event: response.completed\ndata: {"type":"response.completed","response":{"status":"completed"}}\n\n',
+    ]),
+    { headers: { "content-type": "text/event-stream" } }
+  );
+  const delayed = new Promise<Response>((resolve) => setTimeout(() => resolve(response), 20));
+  const result = await withEarlyStreamKeepalive(delayed, {
+    thresholdMs: 1,
+    intervalMs: 50,
+    errorFrame: OPENAI_RESPONSES_ERROR_FRAME,
+  });
+  const text = await drainStream(result.body!);
+  assert.match(text, /response.completed/);
+  assert.doesNotMatch(text, /response.failed/);
 });
 
 // ── Handler rejection → error frame ───────────────────────────────────────

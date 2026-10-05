@@ -32,6 +32,7 @@
  */
 
 import { recordEarlyKeepaliveBytes } from "./earlyKeepaliveByteBuffer.ts";
+import { synthResponsesFailure } from "./diagnostics.ts";
 import { SYNTHETIC_RESPONSES_SEQUENCE_NUMBER } from "./responsesSequence.ts";
 
 const ENCODER = new TextEncoder();
@@ -658,6 +659,9 @@ export async function withEarlyStreamKeepalive(
             // Real SSE stream — forward it verbatim.
             upstreamReader = response.body.getReader();
             let bytesForwarded = 0;
+            let responsesTerminalSeen = false;
+            const terminalDecoder = errorFrameFormat === "responses" ? new TextDecoder() : null;
+            let pendingEvent = "";
             try {
               while (true) {
                 const { done, value } = await upstreamReader.read();
@@ -665,17 +669,58 @@ export async function withEarlyStreamKeepalive(
                 if (value) {
                   controller.enqueue(value);
                   bytesForwarded += value.byteLength;
+                  if (terminalDecoder && !responsesTerminalSeen) {
+                    pendingEvent += terminalDecoder.decode(value, { stream: true });
+                    let boundary: RegExpExecArray | null;
+                    while ((boundary = /\r?\n\r?\n/.exec(pendingEvent))) {
+                      const event = pendingEvent.slice(0, boundary.index);
+                      pendingEvent = pendingEvent.slice(boundary.index + boundary[0].length);
+                      const data = event.split(/\r?\n/).filter((line) => line.startsWith("data:"));
+                      try {
+                        const payload = JSON.parse(
+                          data.map((line) => line.slice(5).trimStart()).join("\n")
+                        );
+                        if (
+                          ["response.completed", "response.failed", "response.incomplete"].includes(
+                            payload?.type
+                          )
+                        ) {
+                          responsesTerminalSeen = true;
+                          break;
+                        }
+                      } catch {
+                        // Ignore non-JSON SSE frames; only a complete terminal event counts.
+                      }
+                    }
+                    if (pendingEvent.length > 65_536) pendingEvent = pendingEvent.slice(-8_192);
+                  }
                 }
               }
-            } catch (readErr) {
-              // Upstream stream failed mid-flight. Only emit an error frame if
-              // NO content was forwarded yet — otherwise the client already
-              // received partial content and a late error frame would corrupt
-              // the SSE stream. Silently close instead; the client will see
-              // the stream end naturally.
-              if (bytesForwarded === 0) {
-                controller.enqueue(errorFrame);
-                recordClientBytes(errorFrame);
+              if (terminalDecoder && !aborted && !responsesTerminalSeen) {
+                const failureFrame = ENCODER.encode(synthResponsesFailure("no_terminal"));
+                controller.enqueue(failureFrame);
+                recordClientBytes(failureFrame);
+              }
+            } catch {
+              // A committed SSE response cannot change its HTTP status. Preserve partial
+              // content and append a protocol-valid, sanitized terminal failure instead
+              // of closing silently (unless upstream already sent a Responses terminal).
+              if (!aborted && !responsesTerminalSeen) {
+                const failureFrame =
+                  errorFrameFormat === "responses"
+                    ? ENCODER.encode(synthResponsesFailure("abort"))
+                    : errorFrame;
+                controller.enqueue(failureFrame);
+                recordClientBytes(failureFrame);
+                try {
+                  warn?.(
+                    "EARLY_KEEPALIVE",
+                    `upstream SSE read failed after ${bytesForwarded} bytes` +
+                      (correlationId ? ` correlationId=${correlationId}` : "")
+                  );
+                } catch {
+                  /* logging must never break the stream */
+                }
               }
             }
           } else {
