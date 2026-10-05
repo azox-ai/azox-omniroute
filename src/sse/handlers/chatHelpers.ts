@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   getModelInfo,
   getComboForModel,
@@ -1260,6 +1261,43 @@ export function withConversationId(response: Response, conversationId: string | 
     });
     cloned.headers.set("X-ConversationId", conversationId);
     return cloned;
+  }
+}
+
+/**
+ * Trace headers for session affinity. They expose only a short connection id
+ * and a short SHA-256 of the internal session key, never the raw session key.
+ */
+export function withAffinityTraceHeaders(
+  response: Response,
+  sessionKey: string | null | undefined,
+  requestId?: string | null
+): Response {
+  if (!response) return response;
+  const selected = response.headers.get("X-OmniRoute-Selected-Connection-Id");
+  const values: Array<[string, string]> = [];
+  const connectionShort = selected ? selected.slice(0, 8) : null;
+  const sessionKeyHash = sessionKey
+    ? createHash("sha256").update(sessionKey).digest("hex").slice(0, 16)
+    : null;
+  if (connectionShort) values.push(["x-omniroute-connection-id", connectionShort]);
+  if (sessionKeyHash) values.push(["x-omniroute-session-key-hash", sessionKeyHash]);
+  log.info(
+    "AFFINITY_TRACE",
+    `request_id=${requestId || "-"} session_key_hash=${sessionKeyHash || "-"} connection=${connectionShort || "-"} status=${response.status}`
+  );
+  if (values.length === 0) return response;
+  try {
+    for (const [name, value] of values) response.headers.set(name, value);
+    return response;
+  } catch {
+    const cloned = new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+    for (const [name, value] of values) cloned.headers.set(name, value);
+    return inheritTrustedLocalRateLimitResponse(response, cloned);
   }
 }
 

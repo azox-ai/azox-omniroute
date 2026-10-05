@@ -684,6 +684,23 @@ export class DefaultExecutor extends BaseExecutor {
     if (clientHeaders) {
       forwardOpencodeClientHeaders(headers, clientHeaders);
 
+      // 9router sits behind this compatible provider. Propagate only trace and
+      // affinity identifiers to that internal hop, never arbitrary client headers.
+      const compatibleBaseUrl = credentials.providerSpecificData?.baseUrl;
+      if (
+        this.provider?.startsWith?.("openai-compatible-") &&
+        typeof compatibleBaseUrl === "string" &&
+        URL.canParse(compatibleBaseUrl) &&
+        new URL(compatibleBaseUrl).hostname === "ninerouter"
+      ) {
+        for (const name of ["x-codex-session-id", "x-session-id", "x-request-id", "x-correlation-id"]) {
+          const value = Object.entries(clientHeaders).find(([key]) => key.toLowerCase() === name)?.[1];
+          if (typeof value === "string" && value.length > 0 && value.length <= 256) {
+            headers[name] = value;
+          }
+        }
+      }
+
       // #3974: merge the client's negotiated anthropic-beta (allowlisted) into the
       // outbound set. The registry's static ANTHROPIC_BETA_CLAUDE_OAUTH lacks
       // tool-search-tool-2025-10-19, so deferred-tool requests were rejected with
