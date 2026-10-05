@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { hasValidPortalSyncToken } from "@/lib/auth/portalSync";
 import {
   createProviderConnection,
@@ -10,6 +11,20 @@ import { resolvePortalConnectionName } from "@/lib/providers/portalSyncMetadata"
 import { buildPortalRecoveryUpdate } from "@/lib/providers/portalManagedConnection";
 
 const ALLOWED_PROVIDERS = new Set(["claude", "codex"]);
+const portalConnectionSchema = z.object({
+  provider: z.enum(["claude", "codex"]),
+  accessToken: z.string().min(1),
+  tokenVersion: z.number().int().min(1),
+  expiresAt: z.string().refine((value) => Number.isFinite(Date.parse(value))),
+  enabled: z.boolean().optional(),
+  email: z.string().optional(),
+  name: z.string().optional(),
+  displayName: z.string().optional(),
+  idToken: z.string().optional(),
+  scope: z.string().optional(),
+  tokenType: z.string().optional(),
+  providerSpecificData: z.record(z.string(), z.unknown()).optional(),
+});
 
 type Connection = Awaited<ReturnType<typeof getProviderConnections>>[number];
 type ManagedConnection = Connection & { id: string; providerSpecificData: Record<string, unknown> };
@@ -74,15 +89,28 @@ export async function PUT(
   const { externalId } = await params;
   if (!externalId || externalId.length > 128)
     return NextResponse.json({ error: "externalId is invalid" }, { status: 400 });
-  let input;
+  let body: unknown;
   try {
-    input = normalizeBody(await request.json());
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Invalid request" },
-      { status: 400 }
-    );
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
+  const parsed = portalConnectionSchema.safeParse(body);
+  if (!parsed.success) {
+    const field = parsed.error.issues[0]?.path[0];
+    const error =
+      field === "provider"
+        ? "Unsupported provider"
+        : field === "accessToken"
+          ? "accessToken is required"
+          : field === "tokenVersion"
+            ? "tokenVersion is invalid"
+            : field === "expiresAt"
+              ? "expiresAt is invalid"
+              : "Invalid request";
+    return NextResponse.json({ error }, { status: 400 });
+  }
+  const input = normalizeBody(parsed.data);
   const existing = await findManagedConnection(externalId);
   const currentVersion = Number(existing?.providerSpecificData?.portalTokenVersion || 0);
   if (existing && input.tokenVersion < currentVersion)
