@@ -559,7 +559,10 @@ test("runSyncCycle keeps in-flight catalog fetches at or below the cycle concurr
     assert.equal(scheduler.MODEL_SYNC_CYCLE_CONCURRENCY, cycleCap);
     scheduler.startModelSyncScheduler("http://127.0.0.1:7777", 1000);
     const cycle = timers.timeouts[0].fn();
-    await flushMicrotasks();
+    const deadline = Date.now() + 5000;
+    while (inFlight < cycleCap && Date.now() < deadline) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
 
     assert.equal(peak, cycleCap);
     assert.equal(inFlight, cycleCap);
