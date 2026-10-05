@@ -96,6 +96,8 @@ const EXPECTED: Record<InventoryKind, Record<string, number>> = {
     "src/lib/services/quotaAutoPing.ts": 1,
   },
   connection: {
+    // Portal sync looks up the managed row for CRUD only; no upstream dispatch (class C).
+    "src/app/api/internal/portal/connections/[externalId]/route.ts": 1,
     "open-sse/handlers/autoComboCandidates.ts": 1,
     "open-sse/handlers/chatCore.ts": 3,
     "open-sse/handlers/cursorCliProxy.ts": 1,

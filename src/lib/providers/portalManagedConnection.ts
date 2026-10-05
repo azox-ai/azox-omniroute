@@ -9,9 +9,12 @@
  * no "needs re-auth" marking, and no deactivation. Recovery is a Portal push.
  */
 
-type ConnectionLike = {
-  providerSpecificData?: Record<string, unknown> | null;
-} | null | undefined;
+type ConnectionLike =
+  | {
+      providerSpecificData?: Record<string, unknown> | null;
+    }
+  | null
+  | undefined;
 
 export function isPortalManagedConnection(connection: ConnectionLike): boolean {
   const externalId = connection?.providerSpecificData?.portalExternalId;

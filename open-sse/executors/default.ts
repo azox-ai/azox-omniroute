@@ -693,8 +693,15 @@ export class DefaultExecutor extends BaseExecutor {
         URL.canParse(compatibleBaseUrl) &&
         new URL(compatibleBaseUrl).hostname === "ninerouter"
       ) {
-        for (const name of ["x-codex-session-id", "x-session-id", "x-request-id", "x-correlation-id"]) {
-          const value = Object.entries(clientHeaders).find(([key]) => key.toLowerCase() === name)?.[1];
+        for (const name of [
+          "x-codex-session-id",
+          "x-session-id",
+          "x-request-id",
+          "x-correlation-id",
+        ]) {
+          const value = Object.entries(clientHeaders).find(
+            ([key]) => key.toLowerCase() === name
+          )?.[1];
           if (typeof value === "string" && value.length > 0 && value.length <= 256) {
             headers[name] = value;
           }

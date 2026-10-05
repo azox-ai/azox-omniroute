@@ -41,8 +41,7 @@ Required regression coverage:
 
 On 2026-09-11/12, the health sweep saw a Portal-managed Codex row with
 `authType="oauth"` and no refresh token, marked it expired, and eventually set
-`isActive=false`. Requests then exhausted fallback retries and surfaced HTTP
-429. Temporarily disabling the bad Codex candidate made routing work again; the
+`isActive=false`. Requests then exhausted fallback retries and surfaced HTTP 429. Temporarily disabling the bad Codex candidate made routing work again; the
 durable fix is the lifecycle separation above.
 
 ### Upstream upgrade checklist
