@@ -359,7 +359,11 @@ test("the web_search fallback's round trip reaches the client item by item", asy
       id: "ws_call_ws1",
       type: "web_search_call",
       status: "completed",
-      action: { type: "web_search", query: "node lts", sources: [] },
+      action: {
+        type: "search",
+        query: "node lts",
+        sources: [{ type: "url", url: "https://example.com", title: "Example", caption: "Result" }],
+      },
     },
   ];
   const body = { ...responsesObject(), output };
@@ -374,4 +378,7 @@ test("the web_search fallback's round trip reaches the client item by item", asy
     ]
   );
   assert.equal(done[1].data.item.output, '{"success":true}');
+  assert.deepEqual(done[2].data.item, output[2]);
+  const completed = events.find((event) => event.event === "response.completed");
+  assert.deepEqual(completed?.data.response.output[2], output[2]);
 });

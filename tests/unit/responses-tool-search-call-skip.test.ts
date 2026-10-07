@@ -87,20 +87,34 @@ test("web_search_call replay is skipped while its function result is preserved",
     ],
     stream: false,
   };
-  let result;
-  assert.doesNotThrow(() => {
-    result = translateRequest("openai-responses", "openai", "test-model", body, false);
-  }, "web_search_call replay must not throw");
-  const messages = (
-    result as { messages?: Array<{ role?: string; tool_calls?: unknown; content?: unknown }> }
-  ).messages;
-  assert.ok(Array.isArray(messages));
-  assert.equal(messages.length, 3, "web_search_call metadata must not create a duplicate message");
-  assert.deepEqual(
-    messages.map((message) => message.role),
-    ["user", "assistant", "tool"]
-  );
-  assert.equal(messages[2].content, body.input[2].output);
+  for (const action of [
+    body.input[3].action,
+    {
+      type: "search",
+      query: "OmniRoute docs",
+      sources: [{ type: "url", title: "Example", url: "https://example.com", caption: "Result" }],
+    },
+  ]) {
+    body.input[3].action = action;
+    let result;
+    assert.doesNotThrow(() => {
+      result = translateRequest("openai-responses", "openai", "test-model", body, false);
+    }, "web_search_call replay must not throw");
+    const messages = (
+      result as { messages?: Array<{ role?: string; tool_calls?: unknown; content?: unknown }> }
+    ).messages;
+    assert.ok(Array.isArray(messages));
+    assert.equal(
+      messages.length,
+      3,
+      "web_search_call metadata must not create a duplicate message"
+    );
+    assert.deepEqual(
+      messages.map((message) => message.role),
+      ["user", "assistant", "tool"]
+    );
+    assert.equal(messages[2].content, body.input[2].output);
+  }
 });
 
 test("multiple tool_search_call items interspersed with messages are skipped in order", () => {

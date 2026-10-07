@@ -317,16 +317,19 @@ export function buildWebSearchCallItem(
           : typeof source.display_url === "string"
             ? source.display_url
             : "";
-      return { title, url, caption };
+      return { type: "url" as const, title, url, caption };
     })
-    .filter((source): source is { title: string; url: string; caption: string } => source !== null);
+    .filter(
+      (source): source is { type: "url"; title: string; url: string; caption: string } =>
+        source !== null
+    );
 
   return {
     id: `ws_${call.id}`,
     type: "web_search_call",
     status: "completed",
     action: {
-      type: "web_search",
+      type: "search",
       query: typeof record.query === "string" ? record.query : "",
       sources,
     },

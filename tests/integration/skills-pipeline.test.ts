@@ -999,9 +999,10 @@ test("web_search fallback emits a native web_search_call output item with source
   assert.equal(response.status, 200);
   assert.ok(webSearchCall, "should append a native web_search_call output item");
   assert.equal(webSearchCall.status, "completed");
-  assert.equal(webSearchAction?.type, "web_search");
+  assert.equal(webSearchAction?.type, "search");
   assert.equal(webSearchAction?.query, "latest omniroute release");
   assert.ok(Array.isArray(webSearchAction?.sources), "sources should be an array");
+  assert.equal(webSearchAction?.sources?.[0]?.type, "url");
   assert.equal(webSearchAction?.sources?.[0]?.title, "Web Search Call Result");
   assert.equal(webSearchAction?.sources?.[0]?.url, "https://example.com/web-search-call");
   assert.equal(
