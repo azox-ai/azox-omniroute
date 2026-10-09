@@ -5232,7 +5232,9 @@ async function handleChatCoreInner({
       // non-streaming request even with SERVER_OWNED_TOOL_LOOP_ENABLED off (the default).
       // Derive it only when the loop can run, and fail closed rather than crash: no
       // identity means no fence, and without a fence the loop must not run.
-      let toolLoopEnabled = isServerOwnedToolLoopEnabled();
+      const responsesWebSearchFallback =
+        webSearchFallbackPlan.enabled && sourceFormat === FORMATS.OPENAI_RESPONSES;
+      let toolLoopEnabled = isServerOwnedToolLoopEnabled() || responsesWebSearchFallback;
       let postInjectionRequestIdentity = "";
       if (toolLoopEnabled) {
         try {
@@ -5256,6 +5258,7 @@ async function handleChatCoreInner({
         enabled: toolLoopEnabled,
         stream,
         isResponsesEndpoint,
+        responsesWebSearchFallback,
         sourceFormat,
         initialLeg: legResult,
         sourceBody: (body || {}) as Record<string, unknown>,
@@ -5305,6 +5308,9 @@ async function handleChatCoreInner({
               },
             }
           );
+          // Re-translation creates response-side ledgers again; they are not upstream fields.
+          extractRequestToolMetadata(translatedBody as Record<string, unknown>);
+          delete (translatedBody as Record<string, unknown>)._disableToolPrefix;
           return runNonStreamingProviderLeg(
             followUpLegInput(
               {

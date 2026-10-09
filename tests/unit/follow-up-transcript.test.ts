@@ -110,6 +110,41 @@ test("OpenAI: messages array required — Responses-only body throws", () => {
   );
 });
 
+test("Responses: replay exact tool call, result, and encrypted reasoning without forcing another search", () => {
+  const sourceBody = {
+    model: "claude-sonnet-5",
+    input: "Search recent news",
+    tools: [{ type: "function", name: "omniroute_web_search" }],
+    tool_choice: { type: "function", name: "omniroute_web_search" },
+  };
+  const call = {
+    type: "function_call",
+    name: "omniroute_web_search",
+    call_id: "call_1",
+    arguments: '{"query":"news"}',
+  };
+  const reasoning = { type: "reasoning", encrypted_content: "ciphertext" };
+  const result = buildFollowUpSourceBody({
+    sourceBody,
+    previousResponse: { output: [reasoning, call] },
+    toolCalls: [{ id: "call_1", name: "omniroute_web_search", arguments: { query: "news" } }],
+    results: [
+      { id: "call_1", name: "omniroute_web_search", result: { success: true }, replayed: false },
+    ],
+    sourceFormat: "openai-responses",
+    maxResultBytes: MAX_RESULT_BYTES_PER_TOOL,
+  });
+  assert.deepEqual(result.input, [
+    { role: "user", content: "Search recent news" },
+    reasoning,
+    call,
+    { type: "function_call_output", call_id: "call_1", output: '{"success":true}' },
+  ]);
+  assert.equal(result.tool_choice, "auto");
+  assert.equal(result.stream, false);
+  assert.deepEqual(sourceBody.input, "Search recent news");
+});
+
 test("OpenAI: calls/results length, duplicates and ID set mismatch all fail closed", () => {
   const missingResult = openaiInput({
     toolCalls: [
@@ -384,14 +419,20 @@ test("buildFollowUpSourceBody: invalid sourceFormat 'anthropic' fails closed", (
   const input = openaiInput({ sourceFormat: "anthropic" } as unknown as {
     sourceFormat: "openai" | "claude";
   });
-  assert.throws(() => buildFollowUpSourceBody(input), /sourceFormat must be "openai" or "claude"/);
+  assert.throws(
+    () => buildFollowUpSourceBody(input),
+    /sourceFormat must be "openai", "claude" or "openai-responses"/
+  );
 });
 
 test("buildFollowUpSourceBody: empty sourceFormat fails closed", () => {
   const input = openaiInput({ sourceFormat: "" } as unknown as {
     sourceFormat: "openai" | "claude";
   });
-  assert.throws(() => buildFollowUpSourceBody(input), /sourceFormat must be "openai" or "claude"/);
+  assert.throws(
+    () => buildFollowUpSourceBody(input),
+    /sourceFormat must be "openai", "claude" or "openai-responses"/
+  );
 });
 
 // ─── Task 4: calls/results name match (Req 3) ──────────────────────────────

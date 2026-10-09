@@ -20,6 +20,8 @@ export const CODEX_HOSTED_TOOL_TYPES: ReadonlySet<string> = new Set([
   "mcp",
 ]);
 
+const LEGACY_WEB_SEARCH_TYPE = /^web_search_preview(?:_\d{4}_\d{2}_\d{2})?$/;
+
 // #2980: a free-plan Codex account (workspacePlanType === "free", from the OAuth
 // id_token) cannot run the server-side `image_generation` hosted tool. The Codex
 // CLI injects it into every Responses request regardless of plan, so it must be
@@ -31,9 +33,7 @@ export function isCodexFreePlan(providerSpecificData: unknown): boolean {
     chatgptPlanType?: unknown;
   };
   const plan =
-    typeof data.workspacePlanType === "string"
-      ? data.workspacePlanType
-      : data.chatgptPlanType;
+    typeof data.workspacePlanType === "string" ? data.workspacePlanType : data.chatgptPlanType;
   return typeof plan === "string" && plan.trim().toLowerCase() === "free";
 }
 
@@ -197,6 +197,11 @@ export function normalizeCodexTools(
       if (!toolType || hasFunctionObject || hasName) {
         return false;
       }
+      if (LEGACY_WEB_SEARCH_TYPE.test(toolType)) {
+        // LiteLLM's Anthropic bridge sends preview; Codex's hosted search accepts web_search.
+        tool.type = "web_search";
+        return true;
+      }
       if (CODEX_HOSTED_TOOL_TYPES.has(toolType)) {
         // #2980: drop the CLI-injected image_generation tool for free-plan
         // accounts, which can't run it server-side (upstream 400 otherwise).
@@ -276,6 +281,16 @@ export function normalizeCodexTools(
     validToolNames.add(name);
     return true;
   });
+  if (
+    body.tool_choice &&
+    typeof body.tool_choice === "object" &&
+    !Array.isArray(body.tool_choice)
+  ) {
+    const choice = body.tool_choice as Record<string, unknown>;
+    if (typeof choice.type === "string" && LEGACY_WEB_SEARCH_TYPE.test(choice.type)) {
+      choice.type = "web_search";
+    }
+  }
 
   if (
     body.tool_choice &&

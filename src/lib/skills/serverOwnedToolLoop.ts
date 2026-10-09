@@ -22,6 +22,7 @@ import {
   classifyServerOwnedCalls,
   extractToolCalls,
   formatEscapeHatchResponse,
+  buildWebSearchCallItem,
   ServerOwnedExecutionError,
 } from "./interception.ts";
 import {
@@ -126,6 +127,17 @@ export async function runServerOwnedToolLoop(
 
   // Accumulate initial leg receipt cost
   let totalCostUsd = options.initialLeg.receipt.computedCostUsd ?? 0;
+  const searchItems: Record<string, unknown>[] = [];
+  const withSearchItems = (response: Record<string, unknown>): Record<string, unknown> => {
+    if (options.sourceFormat !== "openai-responses" || searchItems.length === 0) return response;
+    const responseRoot =
+      response.response && typeof response.response === "object"
+        ? (response.response as Record<string, unknown>)
+        : response;
+    if (!Array.isArray(responseRoot.output)) return response;
+    const updated = { ...responseRoot, output: [...searchItems, ...responseRoot.output] };
+    return responseRoot === response ? updated : { ...response, response: updated };
+  };
 
   const errorResult: (msg: string, status?: number, code?: string) => ServerOwnedToolLoopResult = (
     msg,
@@ -163,7 +175,7 @@ export async function runServerOwnedToolLoop(
       const termination = clientNative.length > 0 ? "client_tools" : "completed";
       return {
         kind: "ok",
-        response: currentLeg.kind === "ok" ? currentLeg.response : undefined,
+        response: currentLeg.kind === "ok" ? withSearchItems(currentLeg.response) : undefined,
         responseForMemoryExtraction:
           currentLeg.kind === "ok" ? currentLeg.responseForMemoryExtraction : undefined,
         finalProviderBody: currentLeg.kind === "ok" ? currentLeg.providerBody : undefined,
@@ -257,6 +269,13 @@ export async function runServerOwnedToolLoop(
     let execResults: ExecutedToolResult[];
     try {
       execResults = await options.executeServerOwned(serverOwned, options.executionContext);
+      if (options.sourceFormat === "openai-responses") {
+        for (const call of serverOwned) {
+          const result = execResults.find((entry) => entry.id === call.id);
+          const search = buildWebSearchCallItem(call, result?.result);
+          if (search) searchItems.push(search);
+        }
+      }
     } catch (err: unknown) {
       if (err instanceof ServerOwnedExecutionError) {
         const termMap: Record<string, ServerOwnedToolLoopResult["termination"]> = {

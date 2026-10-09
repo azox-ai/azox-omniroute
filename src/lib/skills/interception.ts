@@ -206,8 +206,12 @@ export function extractToolCalls(response: any, modelIdOrSourceFormat: string): 
   // Accept either a sourceFormat ("openai" | "claude") or a model ID string.
   // Map known sourceFormat values; fall back to detectProvider for model IDs.
   const format =
-    modelIdOrSourceFormat === "openai" || modelIdOrSourceFormat === "claude"
-      ? modelIdOrSourceFormat
+    modelIdOrSourceFormat === "openai" ||
+    modelIdOrSourceFormat === "claude" ||
+    modelIdOrSourceFormat === "openai-responses"
+      ? modelIdOrSourceFormat === "openai-responses"
+        ? "openai"
+        : modelIdOrSourceFormat
       : undefined;
   const provider =
     format === "claude"
@@ -693,12 +697,12 @@ export function formatEscapeHatchResponse(
   serverCalls: ToolCall[],
   results: ExecutedToolResult[],
   clientCalls: ToolCall[],
-  sourceFormat: "openai" | "claude",
+  sourceFormat: "openai" | "claude" | "openai-responses",
   serializedResultTextById?: Map<string, string>
 ): Record<string, unknown> {
   const serverIds = new Set(serverCalls.map((c) => c.id));
 
-  if (sourceFormat === "openai") {
+  if (sourceFormat === "openai" || sourceFormat === "openai-responses") {
     // Check for Responses API format.
     const responsesOutput = getOpenAIResponseOutput(response);
     if (responsesOutput) {

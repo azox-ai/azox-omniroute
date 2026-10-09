@@ -290,12 +290,12 @@ export function prepareWebSearchFallbackBody<T extends WebSearchFallbackBody>(
     return true;
   });
 
-  const isResponsesTarget = options.targetFormat === FORMATS.OPENAI_RESPONSES;
+  // Fallback runs before request translation: tool schema must match the incoming body.
+  const bodyFormat = options.sourceFormat ?? options.targetFormat;
+  const isResponsesBody = bodyFormat === FORMATS.OPENAI_RESPONSES;
 
   if (!toolNames.has(OMNIROUTE_WEB_SEARCH_FALLBACK_TOOL_NAME)) {
-    preservedTools.unshift(
-      buildFallbackTool(toRecord(builtInSearchTools[0]), options.targetFormat)
-    );
+    preservedTools.unshift(buildFallbackTool(toRecord(builtInSearchTools[0]), bodyFormat));
   }
 
   const nextBody: T = {
@@ -307,11 +307,13 @@ export function prepareWebSearchFallbackBody<T extends WebSearchFallbackBody>(
   }
 
   if (isBuiltInWebSearchToolChoice(body.tool_choice)) {
-    // Match the injected tool shape: flat for Responses API, nested for Chat Completions.
+    // Match the incoming body; the downstream translator handles the target format.
     nextBody.tool_choice = (
-      isResponsesTarget
+      isResponsesBody
         ? { type: "function", name: OMNIROUTE_WEB_SEARCH_FALLBACK_TOOL_NAME }
-        : { type: "function", function: { name: OMNIROUTE_WEB_SEARCH_FALLBACK_TOOL_NAME } }
+        : bodyFormat === FORMATS.CLAUDE
+          ? { type: "tool", name: OMNIROUTE_WEB_SEARCH_FALLBACK_TOOL_NAME }
+          : { type: "function", function: { name: OMNIROUTE_WEB_SEARCH_FALLBACK_TOOL_NAME } }
     ) as T["tool_choice"];
   }
 

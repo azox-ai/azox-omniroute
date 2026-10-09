@@ -77,7 +77,7 @@ export type NonStreamingProviderLegResult =
 export interface ServerOwnedToolLoopOptions {
   initialLeg: NonStreamingProviderLegResult & { kind: "ok" };
   sourceBody: Record<string, unknown>;
-  sourceFormat: "openai" | "claude";
+  sourceFormat: "openai" | "claude" | "openai-responses";
   skillsModelId: string;
   executionContext: ExecutionContext;
   abortSignal?: AbortSignal;
@@ -160,7 +160,7 @@ export interface BuildFollowUpTranscriptInput {
   previousResponse: Record<string, unknown>;
   toolCalls: ToolCall[];
   results: ExecutedToolResult[];
-  sourceFormat: "openai" | "claude";
+  sourceFormat: "openai" | "claude" | "openai-responses";
   maxResultBytes: number;
   maxTotalResultBytes?: number;
   serializedResultTextById?: Map<string, string>;
