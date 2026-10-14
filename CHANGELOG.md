@@ -2499,6 +2499,30 @@ Thanks to everyone whose work landed in v3.8.51:
 
 ---
 
+## [3.8.51-azox.13] — 2026-10-14
+
+Azox deployment release. Runtime source equals dev commit `200e694ac832cd17ab6afecafe1fc3a6388dd4c6`; this section adds release documentation only and changes no runtime code. Base upstream 3.8.51 with the Azox overlay (Portal sync, 9router session forwarding).
+
+### 🐛 Fixes
+
+- **Server-owned web search completes across Responses and Claude**: the web-search fallback body is now shaped for the *incoming* request format instead of the target format, so the injected `omniroute_web_search` tool and its `tool_choice` are correct before translation (flat function for Responses, nested function for Chat Completions, `tool` for Claude). Previously a Claude or Responses client could receive a fallback leg whose tool schema did not match what the translator expected.
+- **Legacy hosted web-search tool types on Codex**: `web_search_preview` and `web_search_preview_<YYYY_MM_DD>` are normalized to `web_search` (both in `tools[]` and `tool_choice.type`), matching what Codex hosted search accepts. Fixes a 400 when the Anthropic bridge or older clients send the preview spelling.
+- **Server-owned tool loop over Responses**: the loop gate and wire layer accept `openai-responses` as a source format, so a non-streaming Responses request that triggers the web-search fallback actually runs the follow-up leg instead of silently skipping it.
+- **Re-translation hygiene on the follow-up leg**: request-side tool ledger metadata is re-extracted and the internal `_disableToolPrefix` marker is stripped after re-translation, so a second translation no longer leaks internal fields upstream or loses the ledger.
+- **Follow-up transcript**: transcript assembly and interception now carry the search results and wire metadata through to the final answer.
+
+### ✅ Tests
+
+Targeted regression: 7 files, 80 tests passed (0 failed, 0 skipped). Added or extended unit coverage: `codex-web-search-compat`, `web-search-fallback-format`, `web-search-follow-up-wire-metadata`, `web-search-9279-repro`, `server-owned-tool-loop-gate`, `server-owned-tool-loop-wire`, `follow-up-transcript`.
+
+### ⚙️ Deployment notes
+
+- No new env vars, migrations, or credentials. Existing connections, API keys, and the `omniroute-data` volume are unaffected.
+- Requires the same `OMNIROUTE_API_KEY`, Portal sync token, and Redis wiring as `v3.8.51-azox.12`.
+- The server-owned tool loop stays gated as before; the fallback path enables it only for a non-streaming Responses request whose web-search fallback is on.
+
+---
+
 ## [3.8.50] — 2026-08-25
 
 _Living section — regenerated 2026-08-12 from all cycle commits (cycle open `ed2db6cb19` → tip). Bullets carry the merged PR and its author; direct pushes listed separately._
