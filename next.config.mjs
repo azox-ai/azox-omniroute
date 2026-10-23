@@ -366,6 +366,11 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   webpack(config, { dev, webpack }) {
+    // Docker layer caching already reuses an unchanged build. Avoid retaining
+    // a second webpack cache graph on builders with a fixed RAM budget.
+    if (!dev && process.env.OMNIROUTE_BUILD_LOW_MEMORY === "1") {
+      config.cache = false;
+    }
     config.ignoreWarnings = [
       ...(config.ignoreWarnings || []),
       isNextIntlExtractorDynamicImportWarning,

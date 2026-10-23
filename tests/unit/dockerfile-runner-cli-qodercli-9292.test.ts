@@ -103,11 +103,12 @@ test("#9292: the Dockerfile still has runner-base / runner-web / runner-cli stag
     stages.map((s) => s.name).filter((n) => n.startsWith("runner")),
     ["runner-base", "runner-web", "runner-cli"]
   );
-  assert.equal(stage("runner-cli").base, "runner-base");
+  assert.equal(stage("runner-cli").base, "cli-deps");
+  assert.equal(stage("cli-deps").base, "runtime-base");
 });
 
 test("#9292: runner-cli installs @qoder-ai/qodercli at the exact pinned version", () => {
-  const installs = globalNpmInstalls(stage("runner-cli"));
+  const installs = globalNpmInstalls(stage("cli-deps"));
   assert.equal(installs.length, 1, "exactly one global-npm layer in runner-cli");
   const specs = installs[0].map(splitSpec);
   const qoder = specs.filter((s) => s.name === QODER_PACKAGE);
@@ -116,7 +117,7 @@ test("#9292: runner-cli installs @qoder-ai/qodercli at the exact pinned version"
 });
 
 test("#9292: every global CLI in runner-cli is an exact x.y.z pin (#12576) and the siblings are kept", () => {
-  const specs = globalNpmInstalls(stage("runner-cli"))[0].map(splitSpec);
+  const specs = globalNpmInstalls(stage("cli-deps"))[0].map(splitSpec);
   for (const { name, version } of specs) {
     assert.match(
       version,
@@ -135,7 +136,7 @@ test("#9292: every global CLI in runner-cli is an exact x.y.z pin (#12576) and t
 });
 
 test("#9292: the qodercli install runs as root and the stage hands back to the node user", () => {
-  const instr = stage("runner-cli").instructions;
+  const instr = stage("cli-deps").instructions;
   const installIdx = instr.findIndex((i) => i.includes(QODER_PACKAGE));
   assert.ok(installIdx > 0);
   const userBefore = instr
@@ -152,14 +153,16 @@ test("#9292: the qodercli install runs as root and the stage hands back to the n
 });
 
 test("#9292: PATH is not overridden in runner stages (npm -g bins land in /usr/local/bin, already on PATH)", () => {
-  for (const name of ["runner-base", "runner-cli"]) {
+  for (const name of ["runtime-base", "cli-deps", "runner-base", "runner-cli"]) {
     const overrides = stage(name).instructions.filter(
       (i) => /^ENV\s+(PATH|NPM_CONFIG_PREFIX)\b/.test(i) || /^ENV\s+PATH=/.test(i)
     );
     assert.deepEqual(overrides, [], `${name} must not reroute PATH / npm prefix`);
   }
-  assert.match(stage("runner-base").base, /^base$/);
-  assert.match(stage("base").base, /^node:/, "official node image: npm prefix is /usr/local");
+  assert.equal(stage("runner-base").base, "runtime-base");
+  assert.equal(stage("runtime-base").base, "base");
+  assert.equal(stage("base").base, "${NODE_IMAGE}");
+  assert.match(dockerfile, /^ARG NODE_IMAGE=node:/m);
 });
 
 test("#9292: qodercli stays out of runner-base and runner-web (those stages must remain CLI-free)", () => {

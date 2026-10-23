@@ -133,6 +133,11 @@ sonar-project.properties
 # Deployment Configs
 docker-compose*.yml
 fly.toml
+# Build orchestration is not application source. Editing CLI layers or the
+# host-side wrapper must not invalidate COPY . / the webpack compilation.
+Dockerfile
+Dockerfile.*
+scripts/build/docker-image.sh
 
 # Consistent with .gitignore
 .DS_Store
