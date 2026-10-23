@@ -20,6 +20,39 @@ _Living section — cycle opened at the v3.8.52 freeze (parallel-cycle model). B
 
 ---
 
+## [3.8.53-azox.1] — 2026-10-23
+
+Azox upstream-only evaluation baseline, pinned to `cheaper-inference/OmniRoute` branch
+`release/v3.8.53` at `5b3be70ba82ce70b59d02e2893afa3d81b6ee88b`. This release adds
+release documentation only; application source remains identical to that upstream commit.
+
+### Included upstream changes
+
+- Quota-share blocks return structured errors without cooling a shared connection (#17214).
+- Malformed Responses SSE and tool-call arguments are contained (#17198).
+- Responses compression preserves current-turn tool output and injected messages (#17310).
+- Intra-URL retries honor short Retry-After hints and use jitter (#17306).
+- Context-window reconciliation avoids redundant writes and cache invalidation (#17296).
+- Restricted API keys list only callable models, including prefix aliases (#17261).
+- Exact-cache identities include response controls and canonical JSON ordering (#17161).
+- Includes the complete upstream dashboard migration to the Keak CI UI Kit (#17951).
+
+### Compatibility and deployment
+
+- Does **not** include the fork-only overlay from `v3.8.51-azox.13`. In particular,
+  Portal-managed OAuth lifecycle and Portal sync integration are not supported by this baseline.
+- Evaluation must use isolated development data and synthetic upstream credentials. Never attach
+  the existing Portal-managed connection database to this baseline.
+- Image builds must retain the deployed Node 26.12.1 security baseline and record source revision.
+- Upstream has an open base-red report (#17219). Verification is pending at tag creation;
+  evaluation results and inherited failures must be reported separately. This entry does not
+  claim a successful build, test run, live provider call, or deployment.
+- Git tags are immutable. Any restored Azox customization belongs in a subsequent release,
+  not a moved `v3.8.53-azox.1` tag. No production rollout is included.
+
+---
+
+
 ## [3.8.52] — 2026-10-19
 
 _Living section — reconciled 2026-10-19 from all cycle commits (`2f42a9ac19` → `0a1265ea81`, 1,386 non-merge commits). Bullets carry the merged PR and its author; direct pushes are listed with their commit hash. Regenerated at each `/generate-release` phase._
