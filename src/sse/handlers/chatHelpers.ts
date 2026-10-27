@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { credentialCooldownResponse } from "./credentialCooldownResponse";
 import {
   getModelInfo,
@@ -1255,6 +1256,41 @@ export function withConversationId(response: Response, conversationId: string | 
     });
     cloned.headers.set("X-ConversationId", conversationId);
     return cloned;
+  }
+}
+
+/** Expose bounded affinity diagnostics, never the raw session key. */
+export function withAffinityTraceHeaders(
+  response: Response,
+  sessionKey: string | null | undefined,
+  requestId?: string | null
+): Response {
+  if (!response) return response;
+  const selected = response.headers.get("X-OmniRoute-Selected-Connection-Id");
+  const connectionShort = selected ? selected.slice(0, 8) : null;
+  const sessionKeyHash = sessionKey
+    ? createHash("sha256").update(sessionKey).digest("hex").slice(0, 16)
+    : null;
+  const values: Array<[string, string]> = [];
+  if (connectionShort) values.push(["x-omniroute-connection-id", connectionShort]);
+  if (sessionKeyHash) values.push(["x-omniroute-session-key-hash", sessionKeyHash]);
+  log.info(
+    "AFFINITY_TRACE",
+    `request_id=${requestId || "-"} session_key_hash=${sessionKeyHash || "-"} connection=${connectionShort || "-"} status=${response.status}`
+  );
+  if (values.length === 0) return response;
+  try {
+    for (const [name, value] of values) response.headers.set(name, value);
+    return inheritResponsePolicies(response, response);
+  } catch {
+    const cloned = new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+    for (const [name, value] of values) cloned.headers.set(name, value);
+    const trusted = inheritTrustedLocalRateLimitResponse(response, cloned);
+    return inheritResponsePolicies(response, trusted);
   }
 }
 

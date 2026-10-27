@@ -681,6 +681,29 @@ export class DefaultExecutor extends BaseExecutor {
     // Client attribution first; operator custom headers below still win.
     if (clientHeaders) {
       forwardOpencodeClientHeaders(headers, clientHeaders, { forwardUserAgent: false });
+
+      // Only the internal 9Router hop receives client trace and affinity identifiers.
+      const compatibleBaseUrl = credentials.providerSpecificData?.baseUrl;
+      if (
+        this.provider?.startsWith?.("openai-compatible-") &&
+        typeof compatibleBaseUrl === "string" &&
+        URL.canParse(compatibleBaseUrl) &&
+        new URL(compatibleBaseUrl).hostname === "ninerouter"
+      ) {
+        for (const name of [
+          "x-codex-session-id",
+          "x-session-id",
+          "x-request-id",
+          "x-correlation-id",
+        ]) {
+          const value = Object.entries(clientHeaders).find(
+            ([key]) => key.toLowerCase() === name
+          )?.[1];
+          if (typeof value === "string" && value.length > 0 && value.length <= 256) {
+            headers[name] = value;
+          }
+        }
+      }
     }
     const isCompatibleProvider =
       this.provider?.startsWith?.("openai-compatible-") ||
