@@ -32,7 +32,7 @@ export function derivePostInjectionRequestIdentity(input: {
 export async function continueServerOwnedToolLoop(input: {
   initialLeg: NonStreamingProviderLegResult & { kind: "ok" };
   sourceBody: Record<string, unknown>;
-  sourceFormat: "openai" | "claude";
+  sourceFormat: "openai" | "claude" | "openai-responses";
   skillsModelId: string;
   executionContext: ExecutionContext;
   abortSignal?: AbortSignal;
@@ -126,6 +126,7 @@ export async function applyServerOwnedToolLoopIfNeeded(input: {
   stream: boolean;
   isResponsesEndpoint: boolean;
   sourceFormat: string;
+  responsesWebSearchFallback?: boolean;
   initialLeg: NonStreamingProviderLegResult;
   sourceBody: Record<string, unknown>;
   skillsModelId: string;
@@ -146,6 +147,7 @@ export async function applyServerOwnedToolLoopIfNeeded(input: {
       stream: input.stream,
       isResponsesEndpoint: input.isResponsesEndpoint,
       sourceFormat: input.sourceFormat,
+      responsesWebSearchFallback: input.responsesWebSearchFallback,
     })
   ) {
     return { kind: "skip" };
@@ -153,7 +155,12 @@ export async function applyServerOwnedToolLoopIfNeeded(input: {
   const loop = await continueServerOwnedToolLoop({
     initialLeg: input.initialLeg,
     sourceBody: input.sourceBody,
-    sourceFormat: input.sourceFormat === FORMATS.CLAUDE ? "claude" : "openai",
+    sourceFormat:
+      input.sourceFormat === FORMATS.CLAUDE
+        ? "claude"
+        : input.sourceFormat === FORMATS.OPENAI_RESPONSES
+          ? "openai-responses"
+          : "openai",
     skillsModelId: input.skillsModelId,
     executionContext: input.executionContext,
     abortSignal: input.abortSignal,

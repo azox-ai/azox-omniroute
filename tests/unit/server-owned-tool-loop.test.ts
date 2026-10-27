@@ -245,6 +245,28 @@ function makeDefaultOptions(
   };
 }
 
+test("Responses loop boundary preserves bounded outputs instead of Claude content", async () => {
+  const call = { type: "function_call", call_id: "call_1", name: "memory_search", arguments: "{}" };
+  const response = { output: [call] };
+  const result = await runServerOwnedToolLoop(
+    makeDefaultOptions({
+      initialLeg: makeOkLeg({ response, responsePayloadFormat: "openai-responses" }),
+      sourceBody: { input: "Search memory" },
+      sourceFormat: "openai-responses",
+      maxFollowUps: 0,
+      now: () => 0,
+    })
+  );
+  assert.equal(result.termination, "max_followups");
+  const output = result.response?.output as Array<Record<string, unknown>>;
+  assert.equal(output.length, 2);
+  assert.equal(output[0], call);
+  assert.equal(output[1].type, "function_call_output");
+  assert.equal(output[1].call_id, "call_1");
+  assert.deepEqual(JSON.parse(String(output[1].output)), { hits: ["a", "b"] });
+  assert.equal(result.response?.content, undefined);
+});
+
 // ─── Interface contract tests (no casts) ─────────────────────────────────────
 
 test("ServerOwnedToolLoopOptions accepts abortSignal and now fields at type level", () => {

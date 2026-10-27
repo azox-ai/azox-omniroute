@@ -16,6 +16,7 @@ const { decodeSkillToolName, encodeSkillToolName } =
 const {
   BaseExecutor,
   buildOpenAIResponse,
+  buildClaudeResponse,
   buildOpenAIToolCallResponse,
   buildRequest,
   builtinsModule,
@@ -935,6 +936,120 @@ test("web_search fallback preserves Responses API output by appending function_c
   assert.equal(output.results[0].title, "Responses Search Result");
 });
 
+test("Responses fallback replays search result and returns final answer with loop flag off", async () => {
+  await seedConnection("openai", { apiKey: "test-responses-replay" });
+  await seedConnection("serper-search", { apiKey: "test-search-replay" });
+  const apiKey = await seedApiKey();
+  const upstreamBodies: Record<string, unknown>[] = [];
+  const previousFlag = process.env.SERVER_OWNED_TOOL_LOOP_ENABLED;
+  process.env.SERVER_OWNED_TOOL_LOOP_ENABLED = "false";
+  try {
+    globalThis.fetch = async (url, init = {}) => {
+      if (String(url).includes("google.serper.dev/search")) {
+        return Response.json({ organic: [{ title: "Docs", link: "https://example.com/docs" }] });
+      }
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      upstreamBodies.push(body);
+      if (upstreamBodies.length === 1) {
+        return buildOpenAIToolCallResponse({
+          toolName: OMNIROUTE_WEB_SEARCH_FALLBACK_TOOL_NAME,
+          toolCallId: "call_replay",
+          argumentsObject: { query: "docs", provider: "serper-search" },
+        });
+      }
+      return buildOpenAIResponse("Found docs after search");
+    };
+    const response = await handleChat(
+      buildRequest({
+        url: "http://localhost/v1/responses",
+        authKey: apiKey.key,
+        body: {
+          model: "openai/gpt-4o-mini",
+          stream: false,
+          input: "Find docs",
+          tools: [{ type: "web_search_preview" }],
+        },
+      })
+    );
+    const json = (await response.json()) as {
+      output: Array<{ type: string; content?: Array<{ text: string }> }>;
+    };
+    assert.equal(response.status, 200);
+    assert.equal(upstreamBodies.length, 2, "must resume model after search");
+    assert.equal(json.output[0].type, "web_search_call");
+    assert.equal(json.output.at(-1)?.content?.[0].text, "Found docs after search");
+    assert.equal(upstreamBodies[1].tool_choice, "auto");
+    assert.equal(upstreamBodies[1].stream, false);
+    assert.match(JSON.stringify(upstreamBodies[1].messages), /call_replay/);
+    assert.match(JSON.stringify(upstreamBodies[1].messages), /example.com\/docs/);
+    for (const body of upstreamBodies) {
+      assert.equal(body._toolNameMap, undefined);
+      assert.equal(body._namespaceToolIdentityMap, undefined);
+      assert.equal(body._disableToolPrefix, undefined);
+    }
+  } finally {
+    if (previousFlag === undefined) delete process.env.SERVER_OWNED_TOOL_LOOP_ENABLED;
+    else process.env.SERVER_OWNED_TOOL_LOOP_ENABLED = previousFlag;
+  }
+});
+
+test("Responses Claude fallback strips translator ledgers on search follow-up", async () => {
+  await seedConnection("claude", { apiKey: "test-claude-replay" });
+  await seedConnection("serper-search", { apiKey: "test-search-replay" });
+  const apiKey = await seedApiKey();
+  const bodies: Record<string, unknown>[] = [];
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).includes("google.serper.dev/search")) {
+      return Response.json({ organic: [{ title: "Docs", link: "https://example.com/docs" }] });
+    }
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    bodies.push(body);
+    if (bodies.length === 1) {
+      const tools = body.tools as Array<{ name: string }>;
+      return Response.json({
+        id: "msg_search",
+        type: "message",
+        role: "assistant",
+        model: "claude-sonnet-4-6",
+        content: [
+          {
+            type: "tool_use",
+            id: "call_claude",
+            name: tools[0].name,
+            input: { query: "docs", provider: "serper-search" },
+          },
+        ],
+        stop_reason: "tool_use",
+        usage: { input_tokens: 10, output_tokens: 4 },
+      });
+    }
+    return buildClaudeResponse("Found Claude docs");
+  };
+  const response = await handleChat(
+    buildRequest({
+      url: "http://localhost/v1/responses",
+      authKey: apiKey.key,
+      body: {
+        model: "claude/claude-sonnet-4-6",
+        stream: false,
+        input: "Find docs",
+        tools: [{ type: "web_search_preview" }],
+      },
+    })
+  );
+  const json = (await response.json()) as {
+    output: Array<{ type: string; content?: Array<{ text: string }> }>;
+  };
+  assert.equal(response.status, 200);
+  assert.equal(bodies.length, 2);
+  assert.equal(json.output.at(-1)?.content?.[0].text, "Found Claude docs");
+  for (const body of bodies) {
+    assert.equal(body._toolNameMap, undefined);
+    assert.equal(body._namespaceToolIdentityMap, undefined);
+    assert.equal(body._disableToolPrefix, undefined);
+  }
+});
+
 test("web_search fallback emits a native web_search_call output item with sources in the responses pipeline", async () => {
   await seedConnection("openai", { apiKey: "sk-openai-web-search-call" });
   await seedConnection("serper-search", { apiKey: "serper-search-key" });
@@ -1079,9 +1194,11 @@ test("web_search fallback executes stream:true responses requests non-streaming 
   const functionCallOutput = json.output.find((item) => item.type === "function_call_output");
 
   assert.equal(response.status, 200);
-  // The upstream must have been called non-streaming so interception can run.
-  assert.equal(upstreamBodies.length, 1);
-  assert.equal(upstreamBodies[0].stream, false);
+  // Repeated tool requests stop after the initial leg plus three follow-ups.
+  // Every provider leg stays non-streaming; only the client response is SSE.
+  assert.equal(upstreamBodies.length, 4);
+  assert.ok(upstreamBodies.every((body) => body.stream === false));
+  assert.ok(upstreamBodies.slice(1).every((body) => body.tool_choice === "auto"));
   assert.ok(webSearchCall, "should return a web_search_call item for a stream:true request");
   const webSearchAction = webSearchCall?.action as
     { query?: string; sources?: Array<Record<string, unknown>> } | undefined;

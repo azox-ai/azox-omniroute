@@ -48,6 +48,29 @@ test("Responses endpoint and format keep the old path", () => {
   );
 });
 
+test("Responses fallback search runs loop only when non-streaming and explicitly scoped", () => {
+  assert.equal(
+    shouldRunServerOwnedToolLoop({
+      enabled: true,
+      stream: false,
+      isResponsesEndpoint: true,
+      sourceFormat: FORMATS.OPENAI_RESPONSES,
+      responsesWebSearchFallback: true,
+    }),
+    true
+  );
+  assert.equal(
+    shouldRunServerOwnedToolLoop({
+      enabled: true,
+      stream: true,
+      isResponsesEndpoint: true,
+      sourceFormat: FORMATS.OPENAI_RESPONSES,
+      responsesWebSearchFallback: true,
+    }),
+    false
+  );
+});
+
 test("non-streaming Chat and Claude run the loop when enabled", () => {
   assert.equal(
     shouldRunServerOwnedToolLoop({
