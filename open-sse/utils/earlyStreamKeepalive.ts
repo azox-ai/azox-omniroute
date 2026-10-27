@@ -32,6 +32,7 @@
  */
 
 import { recordEarlyKeepaliveBytes } from "./earlyKeepaliveByteBuffer.ts";
+import { synthResponsesFailure } from "./diagnostics.ts";
 import { SYNTHETIC_RESPONSES_SEQUENCE_NUMBER } from "./responsesSequence.ts";
 import { withUpstreamErrorDetail } from "./upstreamErrorDetail.ts";
 import { mergeAbortSignals } from "../executors/base/mergeAbortSignals.ts";
@@ -683,6 +684,10 @@ export async function withEarlyStreamKeepalive(
             // Real SSE stream — forward it verbatim.
             upstreamReader = response.body.getReader();
             let bytesForwarded = 0;
+            let terminalSeen = false;
+            const decoder = errorFrameFormat === "responses" ? new TextDecoder() : null;
+            let pendingEvent = "";
+            let readFailed = false;
             try {
               while (true) {
                 const { done, value } = await upstreamReader.read();
@@ -690,18 +695,50 @@ export async function withEarlyStreamKeepalive(
                 if (value) {
                   controller.enqueue(value);
                   bytesForwarded += value.byteLength;
+                  if (decoder && !terminalSeen) {
+                    pendingEvent += decoder.decode(value, { stream: true });
+                    let boundary: RegExpExecArray | null;
+                    while ((boundary = /\r?\n\r?\n/.exec(pendingEvent))) {
+                      const event = pendingEvent.slice(0, boundary.index);
+                      pendingEvent = pendingEvent.slice(boundary.index + boundary[0].length);
+                      try {
+                        const payload = JSON.parse(
+                          event
+                            .split(/\r?\n/)
+                            .filter((line) => line.startsWith("data:"))
+                            .map((line) => line.slice(5).trimStart())
+                            .join("\n")
+                        );
+                        if (
+                          ["response.completed", "response.failed", "response.incomplete"].includes(
+                            payload?.type
+                          )
+                        ) {
+                          terminalSeen = true;
+                          pendingEvent = "";
+                          break;
+                        }
+                      } catch {
+                        // Only complete JSON terminal events count, not comments or malformed data.
+                      }
+                    }
+                    if (pendingEvent.length > 65_536) pendingEvent = pendingEvent.slice(-8_192);
+                  }
                 }
               }
-            } catch (readErr) {
-              // Upstream stream failed mid-flight. Only emit an error frame if
-              // NO content was forwarded yet — otherwise the client already
-              // received partial content and a late error frame would corrupt
-              // the SSE stream. Silently close instead; the client will see
-              // the stream end naturally.
-              if (bytesForwarded === 0) {
-                controller.enqueue(errorFrame);
-                recordClientBytes(errorFrame);
-              }
+            } catch {
+              readFailed = true;
+            }
+            if (!aborted && decoder && !terminalSeen) {
+              const failureFrame = ENCODER.encode(
+                synthResponsesFailure(readFailed ? "abort" : "no_terminal")
+              );
+              controller.enqueue(failureFrame);
+              recordClientBytes(failureFrame);
+            } else if (!aborted && !decoder && readFailed && bytesForwarded === 0) {
+              // Other protocols retain their existing zero-byte error behavior.
+              controller.enqueue(errorFrame);
+              recordClientBytes(errorFrame);
             }
           } else {
             // Non-SSE response (e.g. a JSON error) reached us after we already
