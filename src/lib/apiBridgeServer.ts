@@ -97,13 +97,20 @@ export function buildBridgeRequestHeaders(
 
 function proxyRequest(req: IncomingMessage, res: ServerResponse, dashboardPort: number): void {
   const proxyTimeoutMs = getProxyTimeoutMs(req);
+  const requestHeaders = buildBridgeRequestHeaders(
+    req.headers,
+    req.socket.remoteAddress,
+    dashboardPort
+  );
+  // Connection applies only to client → bridge, not the pooled dashboard socket.
+  delete requestHeaders.connection;
   const targetReq = http.request(
     {
       hostname: "127.0.0.1",
       port: dashboardPort,
       method: req.method,
       path: req.url,
-      headers: buildBridgeRequestHeaders(req.headers, req.socket.remoteAddress, dashboardPort),
+      headers: requestHeaders,
       timeout: proxyTimeoutMs,
     },
     (targetRes) => {
@@ -112,7 +119,10 @@ function proxyRequest(req: IncomingMessage, res: ServerResponse, dashboardPort: 
         targetReq.setTimeout(0);
       }
 
-      res.writeHead(targetRes.statusCode || 502, targetRes.headers);
+      // Dashboard keep-alive applies to the bridge socket. Node derives the client connection.
+      const responseHeaders = { ...targetRes.headers };
+      delete responseHeaders.connection;
+      res.writeHead(targetRes.statusCode || 502, responseHeaders);
       targetRes.pipe(res);
     }
   );
