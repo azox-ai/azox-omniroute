@@ -157,6 +157,7 @@ export function normalizeCodexTools(
   if (!Array.isArray(body.tools)) return;
 
   const hostedToolTypes = new Set(CODEX_HOSTED_TOOL_TYPES);
+  const preservePreview = options?.preserveWebSearchPreviewVersion === true;
   if (options?.preserveWebSearchPreviewVersion)
     hostedToolTypes.add("web_search_preview_2025_03_11");
   const validToolNames = new Set<string>();
@@ -203,6 +204,10 @@ export function normalizeCodexTools(
       const hasName = typeof tool.name === "string";
       if (!toolType || hasFunctionObject || hasName) {
         return false;
+      }
+      if (!preservePreview && /^web_search_preview(?:_\d{4}_\d{2}_\d{2})?$/.test(toolType)) {
+        tool.type = "web_search";
+        return true;
       }
       if (hostedToolTypes.has(toolType)) {
         // #2980: drop the CLI-injected image_generation tool for free-plan
@@ -293,6 +298,13 @@ export function normalizeCodexTools(
     !Array.isArray(body.tool_choice)
   ) {
     const toolChoice = body.tool_choice as Record<string, unknown>;
+    if (
+      !preservePreview &&
+      typeof toolChoice.type === "string" &&
+      /^web_search_preview(?:_\d{4}_\d{2}_\d{2})?$/.test(toolChoice.type)
+    ) {
+      toolChoice.type = "web_search";
+    }
     if (toolChoice.type === "function") {
       const rawName = typeof toolChoice.name === "string" ? toolChoice.name.trim() : "";
       if (!rawName || !validToolNames.has(rawName)) {

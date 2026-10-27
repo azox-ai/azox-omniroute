@@ -108,7 +108,7 @@ test("#15901 translated compaction also preserves the replay declaration through
   assert.deepEqual(result.input, input);
 });
 
-test("#15901 normal turns retain the existing ID sanitization and tool filtering", () => {
+test("#15901 normal turns sanitize IDs and canonicalize legacy web-search tools", () => {
   const result = transform(
     request({
       client_metadata: metadata("turn"),
@@ -116,7 +116,7 @@ test("#15901 normal turns retain the existing ID sanitization and tool filtering
       tool_choice: "auto",
     })
   );
-  assert.deepEqual(result.tools, []);
+  assert.deepEqual(result.tools, [{ type: "web_search" }]);
   assert.equal(result.tool_choice, "auto");
   assert.equal((result.input as Array<Record<string, unknown>>)[0].id, undefined);
 });
