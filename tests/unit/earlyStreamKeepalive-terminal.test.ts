@@ -7,6 +7,35 @@ import {
 
 const encoder = new TextEncoder();
 
+for (const terminal of ["response.completed", "response.failed", "response.incomplete"]) {
+  for (const header of [true, false]) {
+    test(`Responses large ${terminal} preserves terminal detection (header=${header})`, async () => {
+      const event = `${header ? `event: ${terminal}\r\n` : ""}data: ${JSON.stringify({
+        type: terminal, response: { output: "x".repeat(100_000) },
+      })}\r\n\r\n`;
+      const chunks: string[] = [];
+      for (let offset = 0; offset < event.length; offset += 4093) chunks.push(event.slice(offset, offset + 4093));
+      const text = await forward(chunks, false);
+      assert.ok(text.includes(event));
+      assert.doesNotMatch(text, /stream_disconnected/);
+      assert.equal((text.match(/"type":"response.failed"/g) || []).length, terminal === "response.failed" ? 1 : 0);
+    });
+  }
+}
+
+test("Responses large nonterminal event still requires a terminal", async () => {
+  const event = `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "x".repeat(100_000) })}\n\n`;
+  const text = await forward([event.slice(0, 70_000), event.slice(70_000)], false);
+  assert.ok(text.includes(event));
+  assert.match(text, /stream_disconnected/);
+});
+
+test("Responses oversized terminal header without event boundary still requires a terminal", async () => {
+  const event = `event: response.completed\ndata: {"type":"response.completed","output":"${"x".repeat(100_000)}`;
+  const text = await forward([event.slice(0, 70_000), event.slice(70_000)], false);
+  assert.match(text, /stream_disconnected/);
+});
+
 async function forward(chunks: string[], fail: boolean): Promise<string> {
   let index = 0;
   const upstream = new Response(

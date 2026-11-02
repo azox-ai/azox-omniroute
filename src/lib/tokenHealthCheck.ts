@@ -17,6 +17,7 @@ import {
   updateProviderConnection,
 } from "@/lib/db/providers";
 import { getCachedProviderConnectionById } from "@/lib/db/readCache";
+import { isPortalManagedConnection } from "@/lib/providers/portalManagedConnection";
 import { getSettings } from "@/lib/db/settings";
 import { resolveGuardedProxyConfig } from "@/lib/tokenHealthCheckProxyGuard";
 import {
@@ -578,6 +579,8 @@ export async function checkConnection(conn) {
 
   const latestConnection = (await getCachedProviderConnectionById(conn.id)) || conn;
   conn = latestConnection;
+
+  if (isPortalManagedConnection(conn)) return;
 
   // Per-provider opt-out of proactive refresh (e.g. Codex/OpenAI cascade
   // providers) — their token stays on the reactive, serialized 401 path while

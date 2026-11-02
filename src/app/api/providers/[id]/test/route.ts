@@ -3,6 +3,7 @@ import { z } from "zod";
 import { isValidationFailure, validateBody } from "@/shared/validation/helpers";
 import { getCachedProviderConnectionById } from "@/lib/db/readCache";
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/db/providers";
+import { isPortalManagedConnection } from "@/lib/providers/portalManagedConnection";
 import { isCloudEnabled, resolveProxyForConnection } from "@/lib/db/settings";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/lib/cloudSync";
@@ -177,6 +178,8 @@ export async function getProviderRuntimeStatus(
 const FALLBACK_REFRESH_EXPIRY_MS = 30 * 60 * 1000;
 
 async function refreshOAuthToken(connection: any) {
+  if (isPortalManagedConnection(connection)) return null;
+
   const { provider, refreshToken } = connection;
   if (!refreshToken) return null;
 
@@ -366,6 +369,17 @@ export async function testOAuthConnection(
   connection: any,
   timeoutMs: number = OAUTH_TEST_TIMEOUT_MS
 ) {
+  if (isPortalManagedConnection(connection)) {
+    const error = "Portal-managed credentials must be renewed by Portal";
+    return {
+      valid: false,
+      skipped: true,
+      error,
+      refreshed: false,
+      diagnosis: makeDiagnosis("portal_managed", "local", error, "portal_managed"),
+    };
+  }
+
   const config = OAUTH_TEST_CONFIG[connection.provider];
 
   if (!config) {
@@ -962,6 +976,10 @@ export async function testSingleConnection(
     return { valid: false, error: "Connection not found", diagnosis: null, latencyMs: 0 };
   }
 
+  if (isPortalManagedConnection(connection)) {
+    return { ...(await testOAuthConnection(connection)), latencyMs: 0, testedAt: null };
+  }
+
   if (await isConnectionUnavailableToAuxiliaryActivity(connectionId)) {
     const error = "Connection test deferred while an exclusive session lease is active";
     return {
@@ -1063,6 +1081,14 @@ export async function testSingleConnection(
   // connection off during the probe, and the pre-probe snapshot would switch it back on.
   const latest = ((await getProviderConnectionById(connectionId)) ??
     connection) as typeof connection;
+  if (isPortalManagedConnection(connection) || isPortalManagedConnection(latest)) {
+    return {
+      ...(await testOAuthConnection(latest)),
+      latencyMs,
+      runtime: publicRuntime,
+      testedAt: null,
+    };
+  }
   const operatorDisabled = isOperatorDisabled(latest);
 
   // An unsupported validation says nothing about the credential: keep its health as is, but switch

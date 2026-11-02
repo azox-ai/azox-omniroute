@@ -16,6 +16,7 @@ import { getCodexAuthIdentityHeaders } from "../config/codexClient.ts";
 import { runWithProxyContext } from "../utils/proxyFetch.ts";
 import { serializeRefresh } from "./refreshSerializer.ts";
 import { parseTokenExpiryMs } from "@/lib/tokenHealthCheckExpiry";
+import { isPortalManagedConnection } from "@/lib/providers/portalManagedConnection";
 import {
   extractOAuthErrorCode,
   isUnrecoverableRefreshError,
@@ -553,6 +554,8 @@ export async function getAccessToken(
   proxyConfig: unknown = null,
   onPersist?: RefreshPersistFn
 ) {
+  if (isPortalManagedConnection(credentials)) return NO_REFRESH_NEEDED;
+
   if (!credentials || !credentials.refreshToken || typeof credentials.refreshToken !== "string") {
     log?.warn?.("TOKEN_REFRESH", `No valid refresh token available for provider: ${provider}`);
     return null;
@@ -710,6 +713,7 @@ async function _refreshWithFreshCredentials(provider, credentials, log, proxyCon
     try {
       const { getProviderConnectionById } = await import("@/lib/db/providers");
       const dbConnection = await getProviderConnectionById(credentials.connectionId);
+      if (isPortalManagedConnection(dbConnection)) return NO_REFRESH_NEEDED;
       if (dbConnection && dbConnection.refreshToken) {
         const now = Date.now();
         const dbExpiresAt = parseTokenExpiryMs(dbConnection.expiresAt);
