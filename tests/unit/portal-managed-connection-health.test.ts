@@ -51,8 +51,13 @@ test("A4 recovery clears top-level and nested terminal state without mutating me
   assert.ok(metadata.refreshCircuit);
 });
 
-test("A4 runtime recovery resets only the selected connection circuit", async () => {
+test("A4 runtime recovery resets only the selected connection circuit", async (context) => {
   const provider = "portal-fixture";
+  context.after(() => {
+    for (const connectionId of ["portal", "direct"]) {
+      portal.resetPortalRefreshCircuit(provider, connectionId);
+    }
+  });
   for (const connectionId of ["portal", "direct"]) {
     await breaker.refreshWithRetry(async () => null, 1, null, provider, {
       scope: "connection", connectionId, failureThreshold: 1,
@@ -144,16 +149,17 @@ test("Portal refresh skips do not count as provider-wide breaker failures", asyn
   let calls = 0;
   globalThis.fetch = (async () => { calls++; throw new Error("unexpected fetch"); }) as typeof fetch;
   context.after(() => { globalThis.fetch = previousFetch; });
-  const before = breaker.getCircuitBreakerStatus();
+  const before = breaker.getCircuitBreakerStatus().claude;
+  assert.equal(before, undefined);
   for (let attempt = 0; attempt < 7; attempt++) {
     const result = await breaker.refreshWithRetry(() => refresh.getAccessToken("claude", {
       refreshToken: "fixture-skipped-refresh",
       providerSpecificData: { portalExternalId: "fixture-breaker" },
     }, null), 1, null, "claude");
     assert.equal(result, null);
+    assert.deepEqual(breaker.getCircuitBreakerStatus().claude, before);
+    assert.equal(breaker.isProviderBlocked("claude"), false);
   }
-  assert.deepEqual(breaker.getCircuitBreakerStatus(), before);
-  assert.equal(breaker.isProviderBlocked("claude"), false);
   assert.equal(calls, 0);
 });
 
@@ -173,7 +179,8 @@ test("Codex executor Portal skips with no refresh token leave the provider break
     providerSpecificData: { portalExternalId: "codex-executor-marker" },
   };
   const beforeCredentials = structuredClone(credentials);
-  const beforeBreaker = breaker.getCircuitBreakerStatus();
+  const beforeBreaker = breaker.getCircuitBreakerStatus().codex;
+  assert.equal(beforeBreaker, undefined);
   const previousFetch = globalThis.fetch;
   let calls = 0;
   let writes = 0;
@@ -188,7 +195,7 @@ test("Codex executor Portal skips with no refresh token leave the provider break
     }, 3, null, "codex", { scope: "provider", failureThreshold: 5 });
     assert.equal(result, null);
     assert.equal(refreshCalls, 1);
-    assert.deepEqual(breaker.getCircuitBreakerStatus(), beforeBreaker);
+    assert.deepEqual(breaker.getCircuitBreakerStatus().codex, beforeBreaker);
     assert.equal(breaker.isProviderBlocked("codex"), false);
   }
   assert.equal(calls, 0);
