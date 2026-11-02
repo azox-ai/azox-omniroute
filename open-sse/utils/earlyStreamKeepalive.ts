@@ -38,6 +38,10 @@ import { withUpstreamErrorDetail } from "./upstreamErrorDetail.ts";
 import { mergeAbortSignals } from "../executors/base/mergeAbortSignals.ts";
 
 const ENCODER = new TextEncoder();
+const OVERSIZED_TERMINAL_HEADER =
+  /^event:[ \t]*response\.(?:completed|failed|incomplete)[ \t]*\r?$/m;
+const OVERSIZED_TERMINAL_DATA_TYPE =
+  /^data:[ \t]*\{[ \t]*"type"[ \t]*:[ \t]*"response\.(?:completed|failed|incomplete)"/m;
 const KEEPALIVE_FRAME = ENCODER.encode(": keepalive\n\n");
 // OpenAI-compatible keepalive: a syntactically valid empty streaming chunk.
 // Some OpenAI-compatible clients parse every non-empty SSE line as JSON and
@@ -687,6 +691,7 @@ export async function withEarlyStreamKeepalive(
             let terminalSeen = false;
             const decoder = errorFrameFormat === "responses" ? new TextDecoder() : null;
             let pendingEvent = "";
+            let oversizedEventIsTerminal: boolean | null = null;
             let readFailed = false;
             try {
               while (true) {
@@ -701,6 +706,16 @@ export async function withEarlyStreamKeepalive(
                     while ((boundary = /\r?\n\r?\n/.exec(pendingEvent))) {
                       const event = pendingEvent.slice(0, boundary.index);
                       pendingEvent = pendingEvent.slice(boundary.index + boundary[0].length);
+                      const oversizedVerdict = oversizedEventIsTerminal;
+                      oversizedEventIsTerminal = null;
+                      if (oversizedVerdict !== null) {
+                        if (oversizedVerdict) {
+                          terminalSeen = true;
+                          pendingEvent = "";
+                          break;
+                        }
+                        continue;
+                      }
                       try {
                         const payload = JSON.parse(
                           event
@@ -722,7 +737,14 @@ export async function withEarlyStreamKeepalive(
                         // Only complete JSON terminal events count, not comments or malformed data.
                       }
                     }
-                    if (pendingEvent.length > 65_536) pendingEvent = pendingEvent.slice(-8_192);
+                    if (pendingEvent.length > 65_536) {
+                      if (oversizedEventIsTerminal === null) {
+                        oversizedEventIsTerminal =
+                          OVERSIZED_TERMINAL_HEADER.test(pendingEvent) ||
+                          OVERSIZED_TERMINAL_DATA_TYPE.test(pendingEvent);
+                      }
+                      pendingEvent = pendingEvent.slice(-8_192);
+                    }
                   }
                 }
               }

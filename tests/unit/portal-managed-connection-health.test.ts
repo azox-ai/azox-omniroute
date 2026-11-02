@@ -1,0 +1,167 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+process.env.NODE_ENV = "test";
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "omniroute-portal-guard-"));
+process.env.DATA_DIR = dataDir;
+
+const core = await import("../../src/lib/db/core.ts");
+const providers = await import("../../src/lib/db/providers.ts");
+const health = await import("../../src/lib/tokenHealthCheck.ts");
+const portal = await import("../../src/lib/providers/portalManagedConnection.ts");
+const refresh = await import("../../open-sse/services/tokenRefresh.ts");
+const breaker = await import("../../open-sse/services/tokenRefresh/circuitBreaker.ts");
+health.stopTokenHealthCheck();
+
+test.after(() => {
+  core.resetDbInstance();
+  fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
+test("Portal marker requires a nonempty string", () => {
+  for (const marker of [null, undefined, "", 17, false]) {
+    assert.equal(portal.isPortalManagedConnection({ providerSpecificData: { portalExternalId: marker } }), false);
+  }
+  assert.equal(portal.isPortalManagedConnection(null), false);
+  assert.equal(portal.isPortalManagedConnection({ providerSpecificData: { portalExternalId: "fixture" } }), true);
+});
+
+test("A4 recovery clears top-level and nested terminal state without mutating metadata", () => {
+  const metadata = {
+    portalExternalId: "fixture",
+    portalTokenVersion: 7,
+    expiredRetry: { count: 3, at: "2026-01-01" },
+    refreshCircuit: { until: "2099-01-01" },
+    unrelated: { keep: true },
+  };
+  const update = portal.buildPortalRecoveryUpdate(metadata);
+  assert.equal(update.isActive, true);
+  assert.equal(update.testStatus, "active");
+  for (const field of ["lastError", "lastErrorAt", "lastErrorType", "lastErrorSource", "errorCode", "expiredRetryCount", "expiredRetryAt", "rateLimitedUntil"]) {
+    assert.equal(update[field as keyof typeof update], null, field);
+  }
+  assert.equal(update.backoffLevel, 0);
+  assert.deepEqual(update.providerSpecificData, {
+    portalExternalId: "fixture", portalTokenVersion: 7, unrelated: { keep: true },
+  });
+  assert.ok(metadata.expiredRetry);
+  assert.ok(metadata.refreshCircuit);
+});
+
+test("A4 runtime recovery resets only the selected connection circuit", async () => {
+  const provider = "portal-fixture";
+  for (const connectionId of ["portal", "direct"]) {
+    await breaker.refreshWithRetry(async () => null, 1, null, provider, {
+      scope: "connection", connectionId, failureThreshold: 1,
+    });
+  }
+  portal.resetPortalRefreshCircuit(provider, "portal");
+  assert.equal(breaker.isProviderBlocked(provider, { scope: "connection", connectionId: "portal" }), false);
+  assert.equal(breaker.isProviderBlocked(provider, { scope: "connection", connectionId: "direct" }), true);
+});
+
+test("A5 repeated expired Portal sweeps leave the entire persisted row unchanged", async () => {
+  for (const provider of ["claude", "codex", "antigravity"]) {
+    const connection = await providers.createProviderConnection({
+      provider, authType: "oauth", name: `Portal fixture ${provider}`,
+      accessToken: "fixture-access", refreshToken: null,
+      expiresAt: "2020-01-01T00:00:00.000Z", testStatus: "active", isActive: true,
+      providerSpecificData: { portalExternalId: `fixture-${provider}` },
+    });
+    const before = await providers.getProviderConnectionById(String(connection.id));
+    for (let sweep = 0; sweep < 5; sweep++) await health.checkConnection(connection);
+    assert.deepEqual(await providers.getProviderConnectionById(String(connection.id)), before);
+  }
+});
+
+test("A5 reactive Portal refresh never calls fetch or persist, even with a stale refresh token", async (context) => {
+  let calls = 0;
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = (async () => { calls++; throw new Error("unexpected fetch"); }) as typeof fetch;
+  context.after(() => { globalThis.fetch = previousFetch; });
+  let writes = 0;
+  const result = await refresh.getAccessToken("claude", {
+    refreshToken: "fixture-stale-refresh",
+    providerSpecificData: { portalExternalId: "fixture" },
+  }, null, null, async () => { writes++; });
+  assert.equal(result, null);
+  assert.equal(calls, 0);
+  assert.equal(writes, 0);
+});
+
+test("A5 reactive refresh rechecks the persisted Portal marker when credentials omit it", async (context) => {
+  const connection = await providers.createProviderConnection({
+    provider: "claude", authType: "oauth", name: "Persisted Portal fixture",
+    accessToken: "fixture-access", refreshToken: "fixture-unused-refresh",
+    expiresAt: "2020-01-01T00:00:00.000Z", testStatus: "active", isActive: true,
+    providerSpecificData: { portalExternalId: "persisted-marker" },
+  });
+  const before = await providers.getProviderConnectionById(String(connection.id));
+  let calls = 0;
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = (async () => { calls++; throw new Error("unexpected fetch"); }) as typeof fetch;
+  context.after(() => { globalThis.fetch = previousFetch; });
+  const result = await refresh.getAccessToken("claude", {
+    connectionId: String(connection.id), refreshToken: "fixture-unused-refresh",
+  }, null, null, async () => { throw new Error("unexpected persist"); });
+  assert.equal(result, null);
+  assert.equal(calls, 0);
+  assert.deepEqual(await providers.getProviderConnectionById(String(connection.id)), before);
+});
+
+test("A5 manual test returns an error without refreshing or condemning a Portal row", async (context) => {
+  const { testOAuthConnection, testSingleConnection } =
+    await import("../../src/app/api/providers/[id]/test/route.ts");
+  const connection = await providers.createProviderConnection({
+    provider: "codex", authType: "oauth", name: "Manual Portal fixture",
+    accessToken: "fixture-access", refreshToken: "fixture-manual-refresh",
+    expiresAt: "2020-01-01T00:00:00.000Z", testStatus: "active", isActive: true,
+    providerSpecificData: { portalExternalId: "manual-marker" },
+  });
+  const before = await providers.getProviderConnectionById(String(connection.id));
+  let calls = 0;
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = (async () => { calls++; throw new Error("unexpected fetch"); }) as typeof fetch;
+  context.after(() => { globalThis.fetch = previousFetch; });
+  for (const result of [
+    await testOAuthConnection(connection),
+    await testSingleConnection(String(connection.id)),
+  ]) {
+    assert.equal(result.valid, false);
+    assert.equal(result.refreshed, false);
+    assert.equal(result.diagnosis?.code, "portal_managed");
+  }
+  assert.equal(calls, 0);
+  assert.deepEqual(await providers.getProviderConnectionById(String(connection.id)), before);
+});
+
+test("A6 direct-login OAuth still calls its refresh endpoint", async (context) => {
+  let calls = 0;
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    calls++;
+    return new Response(JSON.stringify({ access_token: "fixture-new-access", expires_in: 3600 }), {
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+  context.after(() => { globalThis.fetch = previousFetch; });
+  const result = await refresh.getAccessToken("codex", {
+    refreshToken: "fixture-direct-refresh", providerSpecificData: {},
+  }, null);
+  assert.equal(result?.accessToken, "fixture-new-access");
+  assert.equal(calls, 1);
+});
+
+test("A6 direct-login with missing refresh token still expires", async () => {
+  const connection = await providers.createProviderConnection({
+    provider: "antigravity", authType: "oauth", name: "Direct fixture",
+    accessToken: "fixture-direct", refreshToken: null, isActive: true, testStatus: "active",
+  });
+  await health.checkConnection(connection);
+  const updated = await providers.getProviderConnectionById(String(connection.id));
+  assert.equal(updated?.testStatus, "expired");
+  assert.equal(updated?.errorCode, "no_refresh_token");
+});

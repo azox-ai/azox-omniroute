@@ -134,6 +134,11 @@ export function getCircuitBreakerStatus(): Record<string, CircuitBreakerStatusEn
   return result;
 }
 
+export function resetConnectionRefreshCircuit(provider: string, connectionId: string): void {
+  if (!connectionId.trim()) return;
+  delete _circuitBreaker[breakerKey(provider, connectionId, "connection")];
+}
+
 /**
  * Record a successful refresh — resets circuit breaker for provider.
  */
