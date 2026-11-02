@@ -157,6 +157,73 @@ test("Portal refresh skips do not count as provider-wide breaker failures", asyn
   assert.equal(calls, 0);
 });
 
+test("Codex executor Portal skips with no refresh token leave the provider breaker and row unchanged", async (context) => {
+  const { CodexExecutor } = await import("../../open-sse/executors/codex.ts");
+  const executor = new CodexExecutor();
+  const connection = await providers.createProviderConnection({
+    provider: "codex", authType: "oauth", name: "Codex Portal executor fixture",
+    accessToken: "fixture-codex-access", refreshToken: null,
+    expiresAt: "2020-01-01T00:00:00.000Z", testStatus: "active", isActive: true,
+    providerSpecificData: { portalExternalId: "codex-executor-marker" },
+  });
+  const connectionId = String(connection.id);
+  const before = await providers.getProviderConnectionById(connectionId);
+  const credentials = {
+    connectionId, accessToken: "fixture-codex-access", refreshToken: null,
+    providerSpecificData: { portalExternalId: "codex-executor-marker" },
+  };
+  const beforeCredentials = structuredClone(credentials);
+  const beforeBreaker = breaker.getCircuitBreakerStatus();
+  const previousFetch = globalThis.fetch;
+  let calls = 0;
+  let writes = 0;
+  globalThis.fetch = (async () => { calls++; throw new Error("unexpected fetch"); }) as typeof fetch;
+  context.after(() => { globalThis.fetch = previousFetch; });
+  for (let attempt = 0; attempt < 7; attempt++) {
+    let refreshCalls = 0;
+    const result = await breaker.refreshWithRetry(() => {
+      refreshCalls++;
+      return refresh.runWithOnPersist(async () => { writes++; }, () =>
+        executor.refreshCredentials(credentials, null));
+    }, 3, null, "codex", { scope: "provider", failureThreshold: 5 });
+    assert.equal(result, null);
+    assert.equal(refreshCalls, 1);
+    assert.deepEqual(breaker.getCircuitBreakerStatus(), beforeBreaker);
+    assert.equal(breaker.isProviderBlocked("codex"), false);
+  }
+  assert.equal(calls, 0);
+  assert.equal(writes, 0);
+  assert.deepEqual(credentials, beforeCredentials);
+  assert.deepEqual(await providers.getProviderConnectionById(connectionId), before);
+});
+
+test("Codex executor direct-login without a refresh token still records failure and can refresh with a token", async (context) => {
+  const { CodexExecutor } = await import("../../open-sse/executors/codex.ts");
+  const executor = new CodexExecutor();
+  const previousFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls++;
+    return new Response(JSON.stringify({ access_token: "fixture-codex-renewed", expires_in: 3600 }), {
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+  context.after(() => { globalThis.fetch = previousFetch; });
+  const result = await breaker.refreshWithRetry(() => executor.refreshCredentials({
+    refreshToken: null, providerSpecificData: {},
+  }, null), 1, null, "codex", { scope: "provider", failureThreshold: 5 });
+  assert.equal(result, null);
+  assert.equal(calls, 0);
+  assert.equal(breaker.getCircuitBreakerStatus().codex.failures, 1);
+  assert.equal(breaker.isProviderBlocked("codex"), false);
+  const renewed = await breaker.refreshWithRetry(() => executor.refreshCredentials({
+    refreshToken: "fixture-codex-direct-refresh", providerSpecificData: {},
+  }, null), 1, null, "codex", { scope: "provider", failureThreshold: 5 });
+  assert.equal(renewed?.accessToken, "fixture-codex-renewed");
+  assert.equal(calls, 1);
+  assert.equal(breaker.getCircuitBreakerStatus().codex?.failures ?? 0, 0);
+});
+
 test("credential scheduler skips Portal without caching an error or blocking dispatch", async (context) => {
   const scheduler = await import("../../src/lib/credentialHealth/scheduler.ts");
   scheduler.stopCredentialHealthCheck();

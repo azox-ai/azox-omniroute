@@ -50,6 +50,11 @@ until D2 lands. Without D2, an already poisoned row is not healed by a push.
 - `getAccessToken` answers `NO_REFRESH_NEEDED` for Portal rows. `refreshWithRetry`
   treats that sentinel as nothing attempted, so repeated 401s on Portal rows do
   not trip the provider-scoped refresh breaker for direct-login rows.
+- `CodexExecutor.refreshCredentials` returns that sentinel before checking for a
+  missing refresh token, including the Portal contract's `refreshToken: null`.
+  Fixtures exercise the real executor through `refreshWithRetry` seven times,
+  check no fetch/persist or row mutation, and contrast direct-login failure and
+  successful refresh. These fixtures are **NOT RUN** under the D1 execution gate.
 - Known gap: `open-sse/executors/antigravity.ts` `refreshCredentials` calls the
   refresh endpoint without `getAccessToken` and has no Portal guard. The
   Portal contract provisions only `claude` and `codex` rows, and Portal rows
