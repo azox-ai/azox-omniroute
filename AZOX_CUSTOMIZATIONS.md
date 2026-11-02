@@ -39,6 +39,23 @@ Portal-managed connections are identified by a nonempty string in
 `buildPortalRecoveryUpdate()` is ready for the D2 route, but nothing calls it
 until D2 lands. Without D2, an already poisoned row is not healed by a push.
 
+### Skip contract for Portal rows
+
+- A Portal row's connection test returns `skipped: true` with diagnosis code
+  `portal_managed` and writes nothing. `src/lib/credentialHealth/scheduler.ts`
+  honors `skipped` by not caching an `error`, so these skips do not cause
+  `checkCredentialGate` to block a Portal row. Pre-existing cached errors are
+  not cleared by a skip. Returning plain `valid: false` would make the scheduler
+  cache `error` and the combo gate skip the row.
+- `getAccessToken` answers `NO_REFRESH_NEEDED` for Portal rows. `refreshWithRetry`
+  treats that sentinel as nothing attempted, so repeated 401s on Portal rows do
+  not trip the provider-scoped refresh breaker for direct-login rows.
+- Known gap: `open-sse/executors/antigravity.ts` `refreshCredentials` calls the
+  refresh endpoint without `getAccessToken` and has no Portal guard. The
+  Portal contract provisions only `claude` and `codex` rows, and Portal rows
+  carry no refresh token (that executor returns early), so D1 leaves it
+  unchanged. Revisit if Portal ever manages Antigravity rows.
+
 ### Nested state checklist
 
 `expiredRetry` and `refreshCircuit` live inside `providerSpecificData`, not in

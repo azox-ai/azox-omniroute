@@ -87,7 +87,7 @@ test("A5 reactive Portal refresh never calls fetch or persist, even with a stale
     refreshToken: "fixture-stale-refresh",
     providerSpecificData: { portalExternalId: "fixture" },
   }, null, null, async () => { writes++; });
-  assert.equal(result, null);
+  assert.equal(result, refresh.NO_REFRESH_NEEDED);
   assert.equal(calls, 0);
   assert.equal(writes, 0);
 });
@@ -107,7 +107,7 @@ test("A5 reactive refresh rechecks the persisted Portal marker when credentials 
   const result = await refresh.getAccessToken("claude", {
     connectionId: String(connection.id), refreshToken: "fixture-unused-refresh",
   }, null, null, async () => { throw new Error("unexpected persist"); });
-  assert.equal(result, null);
+  assert.equal(result, refresh.NO_REFRESH_NEEDED);
   assert.equal(calls, 0);
   assert.deepEqual(await providers.getProviderConnectionById(String(connection.id)), before);
 });
@@ -131,11 +131,66 @@ test("A5 manual test returns an error without refreshing or condemning a Portal 
     await testSingleConnection(String(connection.id)),
   ]) {
     assert.equal(result.valid, false);
+    assert.equal(result.skipped, true);
     assert.equal(result.refreshed, false);
     assert.equal(result.diagnosis?.code, "portal_managed");
   }
   assert.equal(calls, 0);
   assert.deepEqual(await providers.getProviderConnectionById(String(connection.id)), before);
+});
+
+test("Portal refresh skips do not count as provider-wide breaker failures", async (context) => {
+  const previousFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => { calls++; throw new Error("unexpected fetch"); }) as typeof fetch;
+  context.after(() => { globalThis.fetch = previousFetch; });
+  const before = breaker.getCircuitBreakerStatus();
+  for (let attempt = 0; attempt < 7; attempt++) {
+    const result = await breaker.refreshWithRetry(() => refresh.getAccessToken("claude", {
+      refreshToken: "fixture-skipped-refresh",
+      providerSpecificData: { portalExternalId: "fixture-breaker" },
+    }, null), 1, null, "claude");
+    assert.equal(result, null);
+  }
+  assert.deepEqual(breaker.getCircuitBreakerStatus(), before);
+  assert.equal(breaker.isProviderBlocked("claude"), false);
+  assert.equal(calls, 0);
+});
+
+test("credential scheduler skips Portal without caching an error or blocking dispatch", async (context) => {
+  const scheduler = await import("../../src/lib/credentialHealth/scheduler.ts");
+  scheduler.stopCredentialHealthCheck();
+  const cache = await import("../../src/lib/credentialHealth/cache.ts");
+  const { checkCredentialGate } = await import("../../open-sse/services/credentialGate.ts");
+  scheduler.__test_resetCredentialHealthScheduler();
+  cache.__test_resetCredentialHealthCache();
+  context.after(() => {
+    scheduler.stopCredentialHealthCheck();
+    scheduler.__test_resetCredentialHealthScheduler();
+    cache.__test_resetCredentialHealthCache();
+  });
+  for (const row of await providers.getProviderConnections()) {
+    await providers.updateProviderConnection(String(row.id), { healthCheckInterval: 0 });
+  }
+  const connection = await providers.createProviderConnection({
+    provider: "claude", authType: "oauth", name: "Scheduler Portal fixture",
+    email: "scheduler-portal@example.invalid", accessToken: "fixture-access", refreshToken: null,
+    expiresAt: "2020-01-01T00:00:00.000Z", testStatus: "active", isActive: true,
+    healthCheckInterval: 1, providerSpecificData: { portalExternalId: "scheduler-marker" },
+  });
+  const connectionId = String(connection.id);
+  const before = await providers.getProviderConnectionById(connectionId);
+  const previousFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => { calls++; throw new Error("unexpected fetch"); }) as typeof fetch;
+  context.after(() => { globalThis.fetch = previousFetch; });
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await scheduler.forceSweep();
+    assert.equal(cache.getCredentialHealth(connectionId), undefined);
+    assert.notEqual(checkCredentialGate(connectionId, "claude", "claude/fixture").allowed, false);
+  }
+  assert.deepEqual(await providers.getProviderConnectionById(connectionId), before);
+  assert.equal(calls, 0);
 });
 
 test("A6 direct-login OAuth still calls its refresh endpoint", async (context) => {

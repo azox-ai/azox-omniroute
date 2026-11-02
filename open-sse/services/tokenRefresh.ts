@@ -554,7 +554,7 @@ export async function getAccessToken(
   proxyConfig: unknown = null,
   onPersist?: RefreshPersistFn
 ) {
-  if (isPortalManagedConnection(credentials)) return null;
+  if (isPortalManagedConnection(credentials)) return NO_REFRESH_NEEDED;
 
   if (!credentials || !credentials.refreshToken || typeof credentials.refreshToken !== "string") {
     log?.warn?.("TOKEN_REFRESH", `No valid refresh token available for provider: ${provider}`);
@@ -713,7 +713,7 @@ async function _refreshWithFreshCredentials(provider, credentials, log, proxyCon
     try {
       const { getProviderConnectionById } = await import("@/lib/db/providers");
       const dbConnection = await getProviderConnectionById(credentials.connectionId);
-      if (isPortalManagedConnection(dbConnection)) return null;
+      if (isPortalManagedConnection(dbConnection)) return NO_REFRESH_NEEDED;
       if (dbConnection && dbConnection.refreshToken) {
         const now = Date.now();
         const dbExpiresAt = parseTokenExpiryMs(dbConnection.expiresAt);

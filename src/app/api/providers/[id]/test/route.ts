@@ -373,6 +373,7 @@ export async function testOAuthConnection(
     const error = "Portal-managed credentials must be renewed by Portal";
     return {
       valid: false,
+      skipped: true,
       error,
       refreshed: false,
       diagnosis: makeDiagnosis("portal_managed", "local", error, "portal_managed"),
@@ -1082,7 +1083,7 @@ export async function testSingleConnection(
     connection) as typeof connection;
   if (isPortalManagedConnection(connection) || isPortalManagedConnection(latest)) {
     return {
-      ...result,
+      ...(await testOAuthConnection(latest)),
       latencyMs,
       runtime: publicRuntime,
       testedAt: null,
