@@ -257,6 +257,52 @@ test("manager.stub.ts exports every name statically imported from @/mitm/manager
   );
 });
 
+// AZO-1211: the 8 GiB / 48 GiB-address-space staging builder OOMs on the webpack
+// production pass. Webpack's default xxhash64 is a WASM module that reserves large
+// virtual memory, and the persistent filesystem pack cache pushes RSS past the cgroup
+// limit while serializing. Production builds use the native sha256 hash and no
+// persistent cache; dev keeps webpack's defaults for fast rebuilds.
+function webpackOptions(dev: boolean) {
+  return {
+    dev,
+    isServer: true,
+    defaultLoaders: { babel: {} } as any,
+    webpack: { IgnorePlugin: class {} },
+  };
+}
+
+test("webpack production build uses native hashing and no persistent cache (AZO-1211)", async () => {
+  const { default: nextConfig } = await loadNextConfig("webpack-prod-memory");
+  const config: any = {
+    context: process.cwd(),
+    output: { path: "/repo/.build/next/server", hashFunction: "xxhash64" },
+    cache: { type: "filesystem" },
+    plugins: [],
+  };
+
+  nextConfig.webpack(config, webpackOptions(false));
+
+  assert.equal(config.output.hashFunction, "sha256");
+  assert.equal(config.output.path, "/repo/.build/next/server");
+  assert.equal(config.cache, false);
+});
+
+test("webpack dev build keeps webpack hashing and cache defaults (AZO-1211)", async () => {
+  const { default: nextConfig } = await loadNextConfig("webpack-dev-memory");
+  const cache = { type: "memory" };
+  const config: any = {
+    context: process.cwd(),
+    output: { hashFunction: "xxhash64" },
+    cache,
+    plugins: [],
+  };
+
+  nextConfig.webpack(config, webpackOptions(true));
+
+  assert.equal(config.output.hashFunction, "xxhash64");
+  assert.equal(config.cache, cache);
+});
+
 test("next-intl webpack hook preserves caller config and filters known extractor warnings", async () => {
   const { default: nextConfig } = await loadNextConfig("webpack-pass-through");
   const infrastructureWarnings: unknown[][] = [];

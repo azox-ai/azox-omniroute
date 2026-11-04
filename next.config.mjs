@@ -357,6 +357,16 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   webpack(config, { dev, webpack }) {
+    if (!dev) {
+      // AZO-1211: keep the production webpack build inside an 8 GiB cgroup with a 48 GiB
+      // address-space cap. The default xxhash64 hash is a WASM module whose memory
+      // reservation fails under the address-space cap, and the persistent filesystem
+      // pack cache pushes RSS past the cgroup while serializing. One-shot production
+      // builds (Docker) gain nothing from that cache, so use native sha256 and no cache.
+      config.output = config.output || {};
+      config.output.hashFunction = "sha256";
+      config.cache = false;
+    }
     config.ignoreWarnings = [
       ...(config.ignoreWarnings || []),
       isNextIntlExtractorDynamicImportWarning,
