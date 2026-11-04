@@ -1,0 +1,561 @@
+{
+  "ar": {
+    "publicSystem": {
+      "globalError": {
+        "title": "حدث خطأ ما",
+        "description": "حدث خطأ غير متوقع. تم تسجيل هذا وسيتحقق فريقنا منه.",
+        "detailsAriaLabel": "تفاصيل الخطأ",
+        "retryAriaLabel": "إعادة تحميل الصفحة",
+        "tryAgain": "حاول مرة أخرى",
+        "statusAriaLabel": "فتح حالة النظام",
+        "systemStatus": "حالة النظام"
+      }
+    }
+  },
+  "az": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Bir şey səhv oldu",
+        "description": "Gözlənilməz bir xəta baş verdi. Bu qeydə alınıb və komandamız araşdıracaq.",
+        "detailsAriaLabel": "Xəta təfərrüatları",
+        "retryAriaLabel": "Səhifəni yenidən yükləməyə cəhd edin",
+        "tryAgain": "Yenidən Cəhd Et",
+        "statusAriaLabel": "Sistem vəziyyətini açın",
+        "systemStatus": "Sistem Statusu"
+      }
+    }
+  },
+  "bg": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Нещо се обърка",
+        "description": "Настъпи неочаквана грешка. Това е записано и нашият екип ще проведе разследване.",
+        "detailsAriaLabel": "Детайли за грешката",
+        "retryAriaLabel": "Опитайте отново да заредите страницата",
+        "tryAgain": "Опитай отново",
+        "statusAriaLabel": "Отворете системния статус",
+        "systemStatus": "Състояние на системата"
+      }
+    }
+  },
+  "bn": {
+    "publicSystem": {
+      "globalError": {
+        "title": "কিছু ভুল হয়েছে",
+        "description": "একটি অপ্রত্যাশিত ত্রুটি ঘটেছে। এটি লগ করা হয়েছে এবং আমাদের দল তদন্ত করবে।",
+        "detailsAriaLabel": "ত্রুটি বিবরণ",
+        "retryAriaLabel": "পৃষ্ঠাটি পুনরায় লোড করার চেষ্টা করুন",
+        "tryAgain": "পুনরায় চেষ্টা করুন",
+        "statusAriaLabel": "সিস্টেম স্ট্যাটাস খুলুন",
+        "systemStatus": "সিস্টেম স্ট্যাটাস"
+      }
+    }
+  },
+  "cs": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Něco se pokazilo",
+        "description": "Došlo k neočekávané chybě. Tato chyba byla zaznamenána a náš tým ji prozkoumá.",
+        "detailsAriaLabel": "Podrobnosti o chybě",
+        "retryAriaLabel": "Zkuste znovu načíst stránku",
+        "tryAgain": "Zkusit znovu",
+        "statusAriaLabel": "Otevřít stav systému",
+        "systemStatus": "Stav Systému"
+      }
+    }
+  },
+  "da": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Noget gik galt",
+        "description": "Der opstod en uventet fejl. Dette er blevet logget, og vores team vil undersøge det.",
+        "detailsAriaLabel": "Fejl detaljer",
+        "retryAriaLabel": "Prøv at indlæse siden igen",
+        "tryAgain": "Prøv Igen",
+        "statusAriaLabel": "Åbn systemstatus",
+        "systemStatus": "Systemstatus"
+      }
+    }
+  },
+  "de": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Etwas ist schiefgelaufen",
+        "description": "Ein unerwarteter Fehler ist aufgetreten. Dies wurde protokolliert und unser Team wird dies untersuchen.",
+        "detailsAriaLabel": "Fehlerdetails",
+        "retryAriaLabel": "Seite erneut laden",
+        "tryAgain": "Versuche es erneut",
+        "statusAriaLabel": "Systemstatus öffnen",
+        "systemStatus": "Systemstatus"
+      }
+    }
+  },
+  "en": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Something went wrong",
+        "description": "An unexpected error occurred. This has been logged and our team will investigate.",
+        "detailsAriaLabel": "Error details",
+        "retryAriaLabel": "Retry loading the page",
+        "tryAgain": "Try Again",
+        "statusAriaLabel": "Open system status",
+        "systemStatus": "System Status"
+      }
+    }
+  },
+  "es": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Algo salió mal",
+        "description": "Ocurrió un error inesperado. Esto ha sido registrado y nuestro equipo investigará.",
+        "detailsAriaLabel": "Detalles del error",
+        "retryAriaLabel": "Reintentar cargar la página",
+        "tryAgain": "Inténtalo de nuevo",
+        "statusAriaLabel": "Abrir estado del sistema",
+        "systemStatus": "Estado del Sistema"
+      }
+    }
+  },
+  "fa": {
+    "publicSystem": {
+      "globalError": {
+        "title": "چیزی اشتباه پیش رفت",
+        "description": "یک خطای غیرمنتظره رخ داده است. این موضوع ثبت شده و تیم ما بررسی خواهد کرد.",
+        "detailsAriaLabel": "جزئیات خطا",
+        "retryAriaLabel": "بار دیگر تلاش کنید تا صفحه را بارگذاری کنید",
+        "tryAgain": "دوباره تلاش کنید",
+        "statusAriaLabel": "وضعیت سیستم را باز کنید",
+        "systemStatus": "وضعیت سیستم"
+      }
+    }
+  },
+  "fi": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Jotain meni pieleen",
+        "description": "Odottamaton virhe tapahtui. Tämä on kirjattu ja tiimimme tutkii asiaa.",
+        "detailsAriaLabel": "Virheen tiedot",
+        "retryAriaLabel": "Yritä ladata sivu uudelleen",
+        "tryAgain": "Yritä uudelleen",
+        "statusAriaLabel": "Avaa järjestelmän tila",
+        "systemStatus": "Järjestelmän tila"
+      }
+    }
+  },
+  "fr": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Une erreur s'est produite",
+        "description": "Une erreur inattendue s'est produite. Elle a été enregistrée et notre équipe va l'examiner.",
+        "detailsAriaLabel": "Détails de l'erreur",
+        "retryAriaLabel": "Réessayer de charger la page",
+        "tryAgain": "Réessayer",
+        "statusAriaLabel": "Ouvrir l'état du système",
+        "systemStatus": "État du système"
+      }
+    }
+  },
+  "gu": {
+    "publicSystem": {
+      "globalError": {
+        "title": "કંઈક ખોટું થયું",
+        "description": "અણધારિત ભૂલ થઈ છે. આ નોંધવામાં આવી છે અને અમારી ટીમ તપાસ કરશે.",
+        "detailsAriaLabel": "ભૂલ વિગતો",
+        "retryAriaLabel": "પૃષ્ઠને ફરીથી લોડ કરવાનો પ્રયાસ કરો",
+        "tryAgain": "ફરીથી પ્રયાસ કરો",
+        "statusAriaLabel": "સિસ્ટમ સ્થિતિ ખોલો",
+        "systemStatus": "સિસ્ટમ સ્થિતિ"
+      }
+    }
+  },
+  "he": {
+    "publicSystem": {
+      "globalError": {
+        "title": "משהו השתבש",
+        "description": "אירעה שגיאה בלתי צפויה. זה נרשם וצוותנו יחקור את העניין.",
+        "detailsAriaLabel": "פרטי שגיאה",
+        "retryAriaLabel": "נסה לטעון את הדף שוב",
+        "tryAgain": "נסה שוב",
+        "statusAriaLabel": "פתח את מצב המערכת",
+        "systemStatus": "סטטוס מערכת"
+      }
+    }
+  },
+  "hi": {
+    "publicSystem": {
+      "globalError": {
+        "title": "कुछ गलत हो गया",
+        "description": "एक अप्रत्याशित त्रुटि हुई। इसे लॉग किया गया है और हमारी टीम इसकी जांच करेगी।",
+        "detailsAriaLabel": "त्रुटि विवरण",
+        "retryAriaLabel": "पृष्ठ को फिर से लोड करने का प्रयास करें",
+        "tryAgain": "फिर से प्रयास करें",
+        "statusAriaLabel": "सिस्टम स्थिति खोलें",
+        "systemStatus": "सिस्टम स्थिति"
+      }
+    }
+  },
+  "hu": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Valami hiba történt",
+        "description": "Váratlan hiba történt. Ezt rögzítettük, és csapatunk kivizsgálja.",
+        "detailsAriaLabel": "Hiba részletei",
+        "retryAriaLabel": "Próbálja meg újra betölteni az oldalt",
+        "tryAgain": "Próbáld újra",
+        "statusAriaLabel": "Rendszerállapot megnyitása",
+        "systemStatus": "Rendszerállapot"
+      }
+    }
+  },
+  "id": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Sesuatu telah salah",
+        "description": "Terjadi kesalahan yang tidak terduga. Ini telah dicatat dan tim kami akan menyelidiki.",
+        "detailsAriaLabel": "Rincian kesalahan",
+        "retryAriaLabel": "Coba muat ulang halaman tersebut",
+        "tryAgain": "Coba Lagi",
+        "statusAriaLabel": "Buka status sistem",
+        "systemStatus": "Status Sistem"
+      }
+    }
+  },
+  "in": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Sesuatu telah salah",
+        "description": "Terjadi kesalahan yang tidak terduga. Ini telah dicatat dan tim kami akan menyelidiki.",
+        "detailsAriaLabel": "Rincian kesalahan",
+        "retryAriaLabel": "Coba muat ulang halaman tersebut",
+        "tryAgain": "Coba Lagi",
+        "statusAriaLabel": "Buka status sistem",
+        "systemStatus": "Status Sistem"
+      }
+    }
+  },
+  "it": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Qualcosa è andato storto",
+        "description": "Si è verificato un errore imprevisto. Questo è stato registrato e il nostro team indagherà.",
+        "detailsAriaLabel": "Dettagli dell'errore",
+        "retryAriaLabel": "Riprova a caricare la pagina",
+        "tryAgain": "Riprova",
+        "statusAriaLabel": "Apri stato del sistema",
+        "systemStatus": "Stato Del Sistema"
+      }
+    }
+  },
+  "ja": {
+    "publicSystem": {
+      "globalError": {
+        "title": "何かがうまくいきませんでした",
+        "description": "予期しないエラーが発生しました。これがログに記録されており、私たちのチームが調査します。",
+        "detailsAriaLabel": "エラーの詳細",
+        "retryAriaLabel": "ページの再読み込みを試みる",
+        "tryAgain": "もう一度試してください",
+        "statusAriaLabel": "システムステータスを開く",
+        "systemStatus": "システムステータス"
+      }
+    }
+  },
+  "ko": {
+    "publicSystem": {
+      "globalError": {
+        "title": "문제가 발생했습니다",
+        "description": "예기치 않은 오류가 발생했습니다. 이 오류는 기록되었으며, 저희 팀이 조사할 것입니다.",
+        "detailsAriaLabel": "오류 세부정보",
+        "retryAriaLabel": "페이지를 다시 로드해 보세요",
+        "tryAgain": "다시 시도하세요",
+        "statusAriaLabel": "시스템 상태 열기",
+        "systemStatus": "시스템 상태"
+      }
+    }
+  },
+  "mr": {
+    "publicSystem": {
+      "globalError": {
+        "title": "काहीतरी चुकलं आहे",
+        "description": "एक अनपेक्षित त्रुटी झाली. हे लॉग केले गेले आहे आणि आमची टीम तपासणी करेल.",
+        "detailsAriaLabel": "त्रुटी तपशील",
+        "retryAriaLabel": "पृष्ठ लोड करण्याचा प्रयत्न करा",
+        "tryAgain": "पुन्हा प्रयत्न करा",
+        "statusAriaLabel": "सिस्टम स्थिती उघडा",
+        "systemStatus": "सिस्टम स्थिती"
+      }
+    }
+  },
+  "ms": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Sesuatu telah berlaku kesilapan",
+        "description": "Ralat yang tidak dijangka telah berlaku. Ini telah direkodkan dan pasukan kami akan menyiasat.",
+        "detailsAriaLabel": "Butiran ralat",
+        "retryAriaLabel": "Cuba muat semula halaman tersebut",
+        "tryAgain": "Cuba Lagi",
+        "statusAriaLabel": "Buka status sistem",
+        "systemStatus": "Status Sistem"
+      }
+    }
+  },
+  "nl": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Er is iets misgegaan",
+        "description": "Er is een onverwachte fout opgetreden. Dit is geregistreerd en ons team zal het onderzoeken.",
+        "detailsAriaLabel": "Foutdetails",
+        "retryAriaLabel": "Probeer de pagina opnieuw te laden",
+        "tryAgain": "Probeer het opnieuw",
+        "statusAriaLabel": "Open systeemstatus",
+        "systemStatus": "Systeemstatus"
+      }
+    }
+  },
+  "no": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Noe gikk galt",
+        "description": "En uventet feil oppstod. Dette har blitt loggført, og teamet vårt vil undersøke.",
+        "detailsAriaLabel": "Feildetaljer",
+        "retryAriaLabel": "Prøv å laste inn siden på nytt",
+        "tryAgain": "Prøv igjen",
+        "statusAriaLabel": "Åpne systemstatus",
+        "systemStatus": "Systemstatus"
+      }
+    }
+  },
+  "phi": {
+    "publicSystem": {
+      "globalError": {
+        "title": "May nangyaring mali",
+        "description": "Isang hindi inaasahang error ang nangyari. Ito ay naitala at ang aming koponan ay magsasagawa ng imbestigasyon.",
+        "detailsAriaLabel": "Mga detalye ng error",
+        "retryAriaLabel": "Subukang i-load muli ang pahina",
+        "tryAgain": "Subukan Muli",
+        "statusAriaLabel": "Buksan ang katayuan ng sistema",
+        "systemStatus": "Katayuan ng Sistema"
+      }
+    }
+  },
+  "pl": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Coś poszło nie tak",
+        "description": "Wystąpił nieoczekiwany błąd. Został on zapisany, a nasz zespół przeprowadzi dochodzenie.",
+        "detailsAriaLabel": "Szczegóły błędu",
+        "retryAriaLabel": "Spróbuj ponownie załadować stronę",
+        "tryAgain": "Spróbuj ponownie",
+        "statusAriaLabel": "Otwórz status systemu",
+        "systemStatus": "Stan systemu"
+      }
+    }
+  },
+  "pt": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Algo correu mal",
+        "description": "Ocorreu um erro inesperado. Isto foi registado e a nossa equipa irá investigar.",
+        "detailsAriaLabel": "Detalhes do erro",
+        "retryAriaLabel": "Tente carregar a página novamente",
+        "tryAgain": "Tente Novamente",
+        "statusAriaLabel": "Abrir estado do sistema",
+        "systemStatus": "Estado do Sistema"
+      }
+    }
+  },
+  "pt-BR": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Algo deu errado",
+        "description": "Ocorreu um erro inesperado. Isso foi registrado e nossa equipe irá investigar.",
+        "detailsAriaLabel": "Detalhes do erro",
+        "retryAriaLabel": "Tente carregar a página novamente",
+        "tryAgain": "Tente Novamente",
+        "statusAriaLabel": "Abrir status do sistema",
+        "systemStatus": "Status do Sistema"
+      }
+    }
+  },
+  "ro": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Ceva a mers prost",
+        "description": "A apărut o eroare neașteptată. Aceasta a fost înregistrată și echipa noastră va investiga.",
+        "detailsAriaLabel": "Detalii eroare",
+        "retryAriaLabel": "Reîncercați să încărcați pagina",
+        "tryAgain": "Încearcă din nou",
+        "statusAriaLabel": "Deschide starea sistemului",
+        "systemStatus": "Starea Sistemului"
+      }
+    }
+  },
+  "ru": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Что-то пошло не так",
+        "description": "Произошла неожиданная ошибка. Это было зафиксировано, и наша команда проведет расследование.",
+        "detailsAriaLabel": "Детали ошибки",
+        "retryAriaLabel": "Повторить загрузку страницы",
+        "tryAgain": "Попробуйте снова",
+        "statusAriaLabel": "Открыть статус системы",
+        "systemStatus": "Статус системы"
+      }
+    }
+  },
+  "sk": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Niečo sa pokazilo",
+        "description": "Vyskytla sa neočakávaná chyba. Toto bolo zaznamenané a náš tím to preskúma.",
+        "detailsAriaLabel": "Podrobnosti o chybe",
+        "retryAriaLabel": "Skúste znovu načítať stránku",
+        "tryAgain": "Skúste znova",
+        "statusAriaLabel": "Otvorenie stavu systému",
+        "systemStatus": "Stav systému"
+      }
+    }
+  },
+  "sv": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Något gick fel",
+        "description": "Ett oväntat fel inträffade. Detta har loggats och vårt team kommer att undersöka det.",
+        "detailsAriaLabel": "Felinformationer",
+        "retryAriaLabel": "Försök att ladda om sidan",
+        "tryAgain": "Försök igen",
+        "statusAriaLabel": "Öppna systemstatus",
+        "systemStatus": "Systemstatus"
+      }
+    }
+  },
+  "sw": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Kitu kimeenda vibaya",
+        "description": "Kosa lisilotarajiwa limetokea. Hii imeandikwa na timu yetu itachunguza.",
+        "detailsAriaLabel": "Maelezo ya kosa",
+        "retryAriaLabel": "jaribu kupakia tena ukurasa",
+        "tryAgain": "Jaribu Tena",
+        "statusAriaLabel": "Fungua hali ya mfumo",
+        "systemStatus": "Hali ya Mfumo"
+      }
+    }
+  },
+  "ta": {
+    "publicSystem": {
+      "globalError": {
+        "title": "ஏதோ தவறு ஏற்பட்டது",
+        "description": "ஒரு எதிர்பாராத பிழை ஏற்பட்டது. இது பதிவு செய்யப்பட்டுள்ளது மற்றும் எங்கள் குழு ஆராயும்.",
+        "detailsAriaLabel": "பிழை விவரங்கள்",
+        "retryAriaLabel": "பக்கம் மீண்டும் ஏற்ற முயற்சிக்கவும்",
+        "tryAgain": "மீண்டும் முயற்சி செய்",
+        "statusAriaLabel": "அமைப்பு நிலையை திறக்கவும்",
+        "systemStatus": "அமைப்பு நிலை"
+      }
+    }
+  },
+  "te": {
+    "publicSystem": {
+      "globalError": {
+        "title": "ఏదో తప్పైంది",
+        "description": "ఒక అప్రత్యాశిత దోషం జరిగింది. ఇది నమోదు చేయబడింది మరియు మా బృందం పరిశీలిస్తుంది.",
+        "detailsAriaLabel": "లోపం వివరాలు",
+        "retryAriaLabel": "పేజీని మళ్లీ లోడ్ చేయండి",
+        "tryAgain": "మరలా ప్రయత్నించండి",
+        "statusAriaLabel": "సిస్టమ్ స్థితిని తెరవండి",
+        "systemStatus": "సిస్టమ్ స్థితి"
+      }
+    }
+  },
+  "th": {
+    "publicSystem": {
+      "globalError": {
+        "title": "เกิดข้อผิดพลาดบางอย่าง",
+        "description": "เกิดข้อผิดพลาดที่ไม่คาดคิดขึ้น ข้อมูลนี้ได้ถูกบันทึกไว้และทีมงานของเราจะทำการตรวจสอบ",
+        "detailsAriaLabel": "รายละเอียดข้อผิดพลาด",
+        "retryAriaLabel": "ลองโหลดหน้าอีกครั้ง",
+        "tryAgain": "ลองอีกครั้ง",
+        "statusAriaLabel": "เปิดสถานะระบบ",
+        "systemStatus": "สถานะระบบ"
+      }
+    }
+  },
+  "tr": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Bir şeyler yanlış gitti",
+        "description": "Beklenmedik bir hata oluştu. Bu kaydedildi ve ekibimiz inceleyecektir.",
+        "detailsAriaLabel": "Hata detayları",
+        "retryAriaLabel": "Sayfayı yeniden yüklemeyi deneyin",
+        "tryAgain": "Tekrar Dene",
+        "statusAriaLabel": "Sistem durumunu açın",
+        "systemStatus": "Sistem Durumu"
+      }
+    }
+  },
+  "uk-UA": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Щось пішло не так",
+        "description": "Сталася несподівана помилка. Це було зафіксовано, і наша команда розслідуватиме.",
+        "detailsAriaLabel": "Деталі помилки",
+        "retryAriaLabel": "Спробуйте перезавантажити сторінку",
+        "tryAgain": "Спробуйте ще раз",
+        "statusAriaLabel": "Відкрити статус системи",
+        "systemStatus": "Стан Системи"
+      }
+    }
+  },
+  "ur": {
+    "publicSystem": {
+      "globalError": {
+        "title": "کچھ غلط ہو گیا",
+        "description": "ایک غیر متوقع خرابی پیش آئی ہے۔ یہ لاگ کر دیا گیا ہے اور ہماری ٹیم تحقیقات کرے گی۔",
+        "detailsAriaLabel": "غلطی کی تفصیلات",
+        "retryAriaLabel": "صفحہ دوبارہ لوڈ کرنے کی کوشش کریں",
+        "tryAgain": "پھر کوشش کریں",
+        "statusAriaLabel": "نظام کی حیثیت کھولیں",
+        "systemStatus": "سسٹم کی حیثیت"
+      }
+    }
+  },
+  "vi": {
+    "publicSystem": {
+      "globalError": {
+        "title": "Đã xảy ra sự cố",
+        "description": "Đã xảy ra lỗi không mong muốn. Lỗi đã được ghi lại và nhóm của chúng tôi sẽ kiểm tra.",
+        "detailsAriaLabel": "Chi tiết lỗi",
+        "retryAriaLabel": "Thử tải lại trang",
+        "tryAgain": "Thử lại",
+        "statusAriaLabel": "Mở trạng thái hệ thống",
+        "systemStatus": "Trạng thái hệ thống"
+      }
+    }
+  },
+  "zh-CN": {
+    "publicSystem": {
+      "globalError": {
+        "title": "出了点问题",
+        "description": "发生了意外错误。此错误已被记录，我们的团队将进行调查。",
+        "detailsAriaLabel": "错误详情",
+        "retryAriaLabel": "重试加载页面",
+        "tryAgain": "再试一次",
+        "statusAriaLabel": "打开系统状态",
+        "systemStatus": "系统状态"
+      }
+    }
+  },
+  "zh-TW": {
+    "publicSystem": {
+      "globalError": {
+        "title": "發生了一些錯誤",
+        "description": "發生了意外錯誤。此錯誤已被記錄，我們的團隊將進行調查。",
+        "detailsAriaLabel": "錯誤詳情",
+        "retryAriaLabel": "重試加載頁面",
+        "tryAgain": "再試一次",
+        "statusAriaLabel": "開啟系統狀態",
+        "systemStatus": "系統狀態"
+      }
+    }
+  }
+}

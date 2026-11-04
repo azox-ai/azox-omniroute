@@ -16,6 +16,7 @@ import { isTurbopackCacheCorruption, purgeAllTurbopackCaches } from "./turbopack
 import { randomUUID } from "node:crypto";
 import { getMainServerTimeoutConfig } from "./main-server-timeouts.mjs";
 import { createSystemdNotifier } from "./systemd-notify.mjs";
+import { watchGlobalErrorMessages } from "../i18n/generate-global-error-messages.mjs";
 
 const { maybeHandleDisallowedMethod } = methodGuard;
 const { wrapRequestListenerWithHeadResponseGuard } = headResponseGuard;
@@ -114,6 +115,7 @@ function createNextApp() {
   });
 }
 
+const stopWatchingGlobalErrorMessages = dev ? watchGlobalErrorMessages() : () => {};
 let nextApp = createNextApp();
 
 // Best-effort self-heal for a corrupted Turbopack persistent dev cache (#6289):
@@ -194,6 +196,7 @@ async function start() {
   });
 
   const shutdown = async (signal) => {
+    stopWatchingGlobalErrorMessages();
     systemdNotifier.stopping();
     try {
       await new Promise((resolve) => server.close(resolve));
@@ -219,6 +222,7 @@ async function start() {
 }
 
 start().catch((error) => {
+  stopWatchingGlobalErrorMessages();
   console.error("[FATAL] Failed to start Next custom server:", error);
   process.exit(1);
 });

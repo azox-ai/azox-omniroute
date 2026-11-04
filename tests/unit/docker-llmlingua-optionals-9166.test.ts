@@ -313,7 +313,7 @@ test("#9166 Docker explicitly installs and validates LLMLingua optionals", () =>
   );
 
   const builderStart = dockerfile.indexOf("FROM base AS builder");
-  const runnerStart = dockerfile.indexOf("FROM base AS runner-base");
+  const runnerStart = dockerfile.indexOf("FROM base AS runner-config");
 
   assert.ok(builderStart >= 0, "Docker builder stage must exist");
   assert.ok(runnerStart > builderStart, "Docker runner stage must follow builder");

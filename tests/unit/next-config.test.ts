@@ -358,3 +358,40 @@ test("optimizePackageImports excludes the internal @omniroute/open-sse workspace
     assert.ok(list.includes(lib), `expected external barrel lib ${lib} to stay optimized`);
   }
 });
+
+test("webpack cache can be disabled for Docker production builds without affecting dev", async () => {
+  const original = process.env.OMNIROUTE_BUILD_WEBPACK_CACHE;
+  try {
+    const { default: nextConfig } = await loadNextConfig("webpack-cache");
+    for (const [flag, dev, disabled] of [
+      ["0", false, true],
+      ["0", true, false],
+      ["1", false, false],
+      [undefined, false, false],
+    ] as const) {
+      if (flag === undefined) delete process.env.OMNIROUTE_BUILD_WEBPACK_CACHE;
+      else process.env.OMNIROUTE_BUILD_WEBPACK_CACHE = flag;
+      const cache = { type: "filesystem" };
+      const config = {
+        context: process.cwd(),
+        cache,
+        plugins: [],
+      };
+      nextConfig.webpack(config, {
+        dev,
+        isServer: true,
+        defaultLoaders: { babel: {} },
+        webpack: {},
+      });
+      assert.equal(config.cache, disabled ? false : cache, `cache flag=${flag}, dev=${dev}`);
+    }
+  } finally {
+    if (original === undefined) delete process.env.OMNIROUTE_BUILD_WEBPACK_CACHE;
+    else process.env.OMNIROUTE_BUILD_WEBPACK_CACHE = original;
+  }
+});
+
+test("server lazily loads route entries instead of preloading unused routes", async () => {
+  const { default: nextConfig } = await loadNextConfig("lazy-route-entries");
+  assert.equal(nextConfig.experimental.preloadEntriesOnStart, false);
+});

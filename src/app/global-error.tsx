@@ -3,7 +3,9 @@
 import { NextIntlClientProvider, useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { DEFAULT_LOCALE, LOCALES, LOCALE_COOKIE } from "@/i18n/config";
-import enMessages from "@/i18n/messages/en.json";
+import globalErrorMessages from "@/i18n/globalErrorMessages.generated.json";
+
+const enMessages = globalErrorMessages.en;
 
 /**
  * Global Error Page — FASE-04 Error Handling
@@ -99,15 +101,18 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
   );
 
   useEffect(() => {
-    const nextLocale = getCookieLocale();
-    setLocale(nextLocale);
-    if (nextLocale === DEFAULT_LOCALE) return;
-
-    void import(`../i18n/messages/${nextLocale}.json`)
-      .then((module) =>
-        setMessages(buildGlobalErrorMessages(module.default as Record<string, unknown>))
-      )
-      .catch(() => setMessages(buildGlobalErrorMessages(enMessages)));
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      const nextLocale = getCookieLocale();
+      setLocale(nextLocale);
+      if (nextLocale !== DEFAULT_LOCALE) {
+        setMessages(buildGlobalErrorMessages(globalErrorMessages[nextLocale] || enMessages));
+      }
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   return (
