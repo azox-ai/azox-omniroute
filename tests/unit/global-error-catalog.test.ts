@@ -8,6 +8,7 @@ import {
   utimesSync,
   writeFileSync,
 } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -21,7 +22,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const generatedPath = "src/i18n/globalErrorMessages.generated.json";
 
 function fixture(t: { after: (fn: () => void) => void }) {
-  const directory = mkdtempSync(path.join(root, "_artifacts", "global-error-catalog-test-"));
+  const directory = mkdtempSync(path.join(os.tmpdir(), "omniroute-global-error-catalog-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   mkdirSync(path.join(directory, "config"));
   mkdirSync(path.join(directory, "src/i18n/messages"), { recursive: true });
