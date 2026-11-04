@@ -1,10 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import {
+  PROFILE_ROUTES,
   lazyServerSource,
   profileBuiltImage,
   summarizeSamples,
 } from "../../../scripts/perf/docker-runtime-profile.mjs";
+
+test("runtime smoke only targets existing dashboard pages and API routes", () => {
+  for (const route of PROFILE_ROUTES) {
+    const relative = route.startsWith("/dashboard")
+      ? `src/app/(dashboard)${route}/page.tsx`
+      : `src/app${route}/route.ts`;
+    assert.ok(fs.existsSync(path.resolve(relative)), `Missing route: ${route}`);
+  }
+});
 
 test("built-image smoke requires an explicit image", async () => {
   await assert.rejects(profileBuiltImage(), /Expected image/);

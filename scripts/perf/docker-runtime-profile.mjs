@@ -26,6 +26,17 @@ export function summarizeSamples(samples) {
   };
 }
 
+// Routes measured after login. Keep each dashboard entry backed by a real
+// src/app/(dashboard)/<route>/page.tsx — tests/unit/perf/docker-runtime-profile.test.mjs
+// asserts that link so a renamed page cannot silently turn this smoke into a 404.
+export const PROFILE_ROUTES = [
+  "/dashboard",
+  "/dashboard/providers",
+  "/dashboard/combos",
+  "/api/providers",
+  "/api/models",
+];
+
 const REQUEST = `const start = performance.now();
 const headers = process.env.PERF_COOKIE ? { cookie: process.env.PERF_COOKIE } : {};
 if (process.env.PERF_PASSWORD || process.env.PERF_CHAT_PROBE) headers["content-type"] = "application/json";
@@ -135,13 +146,7 @@ async function run(image, preload, serverFile) {
       );
     }
     const cookie = login.cookie;
-    const routes = [
-      "/dashboard",
-      "/dashboard/providers",
-      "/dashboard/models",
-      "/api/providers",
-      "/api/models",
-    ];
+    const routes = PROFILE_ROUTES;
     const measure = async (route) => {
       const { status, ms, bytes } = await request(name, route, cookie);
       return { route, status, ms, bytes };
