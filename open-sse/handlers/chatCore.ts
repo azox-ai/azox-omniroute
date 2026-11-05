@@ -3253,6 +3253,9 @@ async function handleChatCoreInner({
   }
 
   const streamingTailOutcome = await runStreamingTail({
+    publishPipelineStreamError: (handler: streamFailure.PipelineStreamErrorHandler | null) => {
+      onPipelineStreamError = handler;
+    },
     agentGoalPolicy,
     modelInfo,
     forcedConnectionId,
