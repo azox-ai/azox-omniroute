@@ -130,6 +130,12 @@ const IGNORE_FROM_CODE = new Set([
   // verify-coverage). Operator-supplied script secrets, not OmniRoute runtime config.
   "BOT_TOKEN",
   "BOT_URL",
+  // Docker image profiling harness (scripts/perf/docker-runtime-profile.mjs) — operator-supplied
+  // request target/cookie/password passed into `docker exec`, never OmniRoute runtime config.
+  "PERF_PATH",
+  "PERF_COOKIE",
+  "PERF_PASSWORD",
+  "PERF_CHAT_PROBE",
   // Homologation E2E suite (npm run homolog) vars — configured via the dedicated
   // .env.homolog file (template: .env.homolog.example), never in the runtime .env.
   // Test/ops-only signals against the homologation VPS, same class as COMBO_LIVE_*.

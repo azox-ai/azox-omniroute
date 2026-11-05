@@ -202,6 +202,8 @@ const nextConfig = {
     webpackMemoryOptimizations: true,
     // Run webpack in a separate Node worker, lowering main-process memory.
     webpackBuildWorker: true,
+    // Avoid importing routes that are not needed at process startup.
+    preloadEntriesOnStart: false,
     // Next.js proxy (middleware) has a default 10MB body clone limit. File
     // uploads (OpenAI-compatible /v1/files) routinely exceed this. Match the
     // 512 MB server-side cap; tune via env if needed.
@@ -320,7 +322,9 @@ const nextConfig = {
     // TODO: Re-enable after fixing all sub-component useTranslations scope issues
     ignoreBuildErrors: true,
   },
-  webpack(config, { webpack }) {
+  webpack(config, { dev, webpack }) {
+    // Docker layer caching remains available when the webpack filesystem cache is off.
+    if (!dev && process.env.OMNIROUTE_BUILD_WEBPACK_CACHE === "0") config.cache = false;
     config.ignoreWarnings = [
       ...(config.ignoreWarnings || []),
       isNextIntlExtractorDynamicImportWarning,

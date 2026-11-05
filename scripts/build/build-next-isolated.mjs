@@ -16,6 +16,7 @@ import {
   stubDashboardPages,
   restoreDashboardPages,
 } from "./backendOnlyPages.mjs";
+import { generateGlobalErrorMessages } from "../i18n/generate-global-error-messages.mjs";
 
 /**
  * Layer 1: `app/` has been renamed to `dist/` and the App-Router collision is gone.
@@ -302,6 +303,12 @@ export async function main() {
     }
 
     await resetStandaloneOutput(projectRoot);
+
+    // Keep full locale catalogs out of the client-side global error boundary.
+    const catalog = generateGlobalErrorMessages(projectRoot);
+    console.log(
+      `[build-next-isolated] Global-error catalog: ${catalog.locales} locales (${catalog.changed ? "updated" : "unchanged"})`
+    );
 
     const result = await runNextBuild();
     const standaloneDir = path.join(distDir, "standalone");
