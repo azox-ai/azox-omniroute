@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 
 import { withEarlyStreamKeepalive } from "../../open-sse/utils/earlyStreamKeepalive.ts";
@@ -6,19 +6,25 @@ import { withEarlyStreamKeepalive } from "../../open-sse/utils/earlyStreamKeepal
 /**
  * #8140: Verify the keepalive interval is cleaned up after disconnect/completion.
  *
- * The keepalive interval is unref'd (line 120 of earlyStreamKeepalive.ts), so it
- * won't appear in process._getActiveHandles(). Instead we verify cleanup indirectly:
- * after the stream closes, timer counts must be stable (not growing), proving no
- * leaked interval is still ticking.
+ * The keepalive interval is unref'd, so it never shows in process._getActiveHandles(),
+ * and that process-wide count also moves with unrelated handles (a MessagePort closing).
+ * Track the intervals the stream itself creates and clears instead.
  */
 
-function countTimeoutHandles(): number {
-  const handles = (
-    process as unknown as {
-      _getActiveHandles: () => unknown[];
-    }
-  )._getActiveHandles();
-  return handles.length;
+function trackIntervals(t: TestContext): () => number {
+  const live = new Set<unknown>();
+  const realSet = globalThis.setInterval;
+  const realClear = globalThis.clearInterval;
+  t.mock.method(globalThis, "setInterval", ((...args: Parameters<typeof setInterval>) => {
+    const handle = realSet(...args);
+    live.add(handle);
+    return handle;
+  }) as typeof setInterval);
+  t.mock.method(globalThis, "clearInterval", ((handle?: Parameters<typeof clearInterval>[0]) => {
+    live.delete(handle);
+    realClear(handle);
+  }) as typeof clearInterval);
+  return () => live.size;
 }
 
 function sseResponse(body: string): Response {
@@ -28,7 +34,8 @@ function sseResponse(body: string): Response {
   });
 }
 
-test("#8140: timer count is stable after client disconnect (no leaked interval)", async () => {
+test("#8140: keepalive interval is cleared after client disconnect", async (t) => {
+  const liveIntervals = trackIntervals(t);
   const controller = new AbortController();
   const result = await withEarlyStreamKeepalive(new Promise<Response>(() => {}), {
     thresholdMs: 5,
@@ -37,6 +44,7 @@ test("#8140: timer count is stable after client disconnect (no leaked interval)"
   });
 
   const reader = result.body!.getReader();
+  assert.equal(liveIntervals(), 1, "slow path should start one keepalive interval");
   const { value } = await reader.read();
   assert.ok(value && value.byteLength > 0, "should emit at least one keepalive frame");
 
@@ -52,19 +60,11 @@ test("#8140: timer count is stable after client disconnect (no leaked interval)"
   const timed = new Promise<boolean>((r) => setTimeout(() => r(false), 2000));
   assert.equal(await Promise.race([drained, timed]), true, "stream should close after abort");
 
-  await new Promise((r) => setTimeout(r, 30));
-
-  const count1 = countTimeoutHandles();
-  await new Promise((r) => setTimeout(r, 30));
-  const count2 = countTimeoutHandles();
-  assert.equal(
-    count1,
-    count2,
-    "handle count should be stable after disconnect (no leaked interval ticking)"
-  );
+  assert.equal(liveIntervals(), 0, "keepalive interval should be cleared after disconnect");
 });
 
-test("#8140: timer count is stable after handler resolves normally (slow path)", async () => {
+test("#8140: keepalive interval is cleared after handler resolves (slow path)", async (t) => {
+  const liveIntervals = trackIntervals(t);
   const slowHandler = new Promise<Response>((resolve) => {
     setTimeout(() => resolve(sseResponse("data: [DONE]\n\n")), 80);
   });
@@ -75,20 +75,17 @@ test("#8140: timer count is stable after handler resolves normally (slow path)",
   });
 
   const reader = result.body!.getReader();
+  assert.equal(liveIntervals(), 1, "slow path should start one keepalive interval");
   while (true) {
     const { done } = await reader.read();
     if (done) break;
   }
 
-  await new Promise((r) => setTimeout(r, 30));
-
-  const count1 = countTimeoutHandles();
-  await new Promise((r) => setTimeout(r, 30));
-  const count2 = countTimeoutHandles();
-  assert.equal(count1, count2, "handle count should be stable after normal completion");
+  assert.equal(liveIntervals(), 0, "keepalive interval should be cleared after normal completion");
 });
 
-test("#8140: timer count is stable after handler rejects (slow path)", async () => {
+test("#8140: keepalive interval is cleared after handler rejects (slow path)", async (t) => {
+  const liveIntervals = trackIntervals(t);
   const slowFail = new Promise<Response>((_, reject) => {
     setTimeout(() => reject(new Error("upstream died")), 80);
   });
@@ -99,15 +96,11 @@ test("#8140: timer count is stable after handler rejects (slow path)", async () 
   });
 
   const reader = result.body!.getReader();
+  assert.equal(liveIntervals(), 1, "slow path should start one keepalive interval");
   while (true) {
     const { done } = await reader.read();
     if (done) break;
   }
 
-  await new Promise((r) => setTimeout(r, 30));
-
-  const count1 = countTimeoutHandles();
-  await new Promise((r) => setTimeout(r, 30));
-  const count2 = countTimeoutHandles();
-  assert.equal(count1, count2, "handle count should be stable after error completion");
+  assert.equal(liveIntervals(), 0, "keepalive interval should be cleared after error completion");
 });
