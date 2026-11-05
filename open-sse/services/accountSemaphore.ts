@@ -328,7 +328,6 @@ export function acquireMany(
       );
       drainQueues();
     }, timeoutMs);
-    request.timer.unref?.();
     if (signal) {
       request.abortListener = () => {
         if (request.settled) return;
