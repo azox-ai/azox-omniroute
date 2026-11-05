@@ -108,12 +108,23 @@ test("streamJsonlToOpenAi terminates the read loop once an idle-timeout signal f
     },
   });
 
-  const idleTimeout = AbortSignal.timeout(50);
+  const timeoutController = new AbortController();
+  // Keep the event loop alive while the stalled read is pending: AbortSignal.timeout()
+  // uses an unref'd timer, which Node's test runner may cancel before it fires.
+  const timer = setTimeout(() => timeoutController.abort(), 50);
   const chunks: string[] = [];
-
-  for await (const chunk of streamJsonlToOpenAi(body, "gpt-huggingchat", "id-2", 0, idleTimeout)) {
-    chunks.push(chunk);
+  try {
+    for await (const chunk of streamJsonlToOpenAi(
+      body,
+      "gpt-huggingchat",
+      "id-2",
+      0,
+      timeoutController.signal
+    )) {
+      chunks.push(chunk);
+    }
+    assert.ok(timeoutController.signal.aborted, "expected the idle-timeout signal to have fired");
+  } finally {
+    clearTimeout(timer);
   }
-
-  assert.ok(idleTimeout.aborted, "expected the idle-timeout signal to have fired");
 });

@@ -22,6 +22,10 @@ export const CODEX_HOSTED_TOOL_TYPES: ReadonlySet<string> = new Set([
   "mcp",
 ]);
 
+// Historical spellings of the hosted web-search tool. LiteLLM's Anthropic bridge
+// sends `web_search_preview`; Codex's hosted search only accepts `web_search`.
+const LEGACY_WEB_SEARCH_TYPE = /^web_search_preview(?:_\d{4}_\d{2}_\d{2})?$/;
+
 // #2980: a free-plan Codex account (workspacePlanType === "free", from the OAuth
 // id_token) cannot run the server-side `image_generation` hosted tool. The Codex
 // CLI injects it into every Responses request regardless of plan, so it must be
@@ -204,6 +208,14 @@ export function normalizeCodexTools(
       if (!toolType || hasFunctionObject || hasName) {
         return false;
       }
+      // Canonicalize the preview spellings upstream no longer accepts, keeping the
+      // call's search controls. A compaction replay keeps its original versioned
+      // type (hostedToolTypes already declares it) so the historical tool still
+      // matches the replayed `web_search_call` items.
+      if (LEGACY_WEB_SEARCH_TYPE.test(toolType) && !options?.preserveWebSearchPreviewVersion) {
+        tool.type = "web_search";
+        return true;
+      }
       if (hostedToolTypes.has(toolType)) {
         // #2980: drop the CLI-injected image_generation tool for free-plan
         // accounts, which can't run it server-side (upstream 400 otherwise).
@@ -300,6 +312,16 @@ export function normalizeCodexTools(
     !Array.isArray(body.tool_choice)
   ) {
     const toolChoice = body.tool_choice as Record<string, unknown>;
+    // `tool_choice` names the same hosted tool, so it needs the same canonicalization
+    // as the tool itself — otherwise upstream rejects the preview spelling it was
+    // just told is not a valid tool.
+    if (
+      typeof toolChoice.type === "string" &&
+      LEGACY_WEB_SEARCH_TYPE.test(toolChoice.type) &&
+      !options?.preserveWebSearchPreviewVersion
+    ) {
+      toolChoice.type = "web_search";
+    }
     if (toolChoice.type === "function") {
       const rawName = typeof toolChoice.name === "string" ? toolChoice.name.trim() : "";
       if (!rawName || !validToolNames.has(rawName)) {

@@ -18,26 +18,34 @@ function stage(name: string, nextStage?: string): string {
 }
 
 test("Docker-client-free CLI target retains every supported AI CLI", () => {
-  const core = stage("runner-cli-core", "runner-cli-no-docker");
+  const cliDeps = stage("cli-deps", "cli-docker-deps");
   const clientless = stage("runner-cli-no-docker", "runner-cli");
 
-  assert.match(clientless, /FROM runner-cli-core AS runner-cli-no-docker/);
-  assert.doesNotMatch(core, /docker\.io|docker-compose/);
+  assert.match(clientless, /FROM cli-deps AS runner-cli-no-docker/);
+  assert.doesNotMatch(cliDeps, /docker\.io|docker-compose/);
   assert.doesNotMatch(clientless, /docker\.io|docker-compose/);
-  for (const cli of ["@openai/codex@", "@anthropic-ai/claude-code@", "droid@", "openclaw@"]) {
-    assert.match(core, new RegExp(cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  for (const cli of [
+    "@openai/codex@",
+    "@anthropic-ai/claude-code@",
+    "droid@",
+    "openclaw@",
+    "@qoder-ai/qodercli@",
+  ]) {
+    assert.match(cliDeps, new RegExp(cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   assert.doesNotMatch(
-    core,
+    cliDeps,
     /--ignore-scripts/,
     "native CLI lifecycle scripts must run so Claude Code and OpenClaw are runnable"
   );
 });
 
-test("generic runner-cli remains backward compatible with Docker and Compose clients", () => {
+test("generic runner-cli retains Docker and Compose without adding them to clientless flavor", () => {
+  const dockerDeps = stage("cli-docker-deps", "runner-base");
   const generic = stage("runner-cli");
 
-  assert.match(generic, /FROM runner-cli-core AS runner-cli/);
-  assert.match(generic, /apt-get install -y --no-install-recommends docker\.io docker-compose/);
-  assert.match(generic, /USER node/);
+  assert.match(dockerDeps, /FROM cli-deps AS cli-docker-deps/);
+  assert.match(dockerDeps, /apt-get install -y --no-install-recommends docker\.io docker-compose/);
+  assert.match(generic, /FROM cli-docker-deps AS runner-cli/);
+  assert.match(dockerDeps, /USER node/);
 });

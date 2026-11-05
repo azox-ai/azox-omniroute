@@ -3,6 +3,8 @@
  */
 
 import { v4 as uuidv4 } from "uuid";
+import { isDeepStrictEqual } from "node:util";
+import { createHash } from "node:crypto";
 
 import { isCommonChatGptWebRetiredProviderId } from "@/shared/constants/chatgptWebRetirement";
 import { getDbInstance, rowToCamel, cleanNulls } from "./core";
@@ -125,7 +127,7 @@ interface StatementLike<TRow = unknown> {
 
 interface DbLike {
   prepare: <TRow = unknown>(sql: string) => StatementLike<TRow>;
-  transaction: <T>(fn: () => T) => () => T;
+  transaction: <T>(fn: () => T) => (() => T) & { immediate: () => T };
 }
 
 // Real column set for provider_connections (must match the CREATE TABLE in
@@ -796,6 +798,183 @@ export async function createProviderConnection(data: JsonRecord) {
   }
 
   return returnedConnection;
+}
+
+/** A Portal push is a single versioned write, independent of OAuth email dedup. */
+export type PortalConnectionPush = {
+  provider: "claude" | "codex";
+  accessToken: string;
+  tokenVersion: number;
+  expiresAt: string;
+  enabled: boolean;
+  email?: string;
+  name?: string;
+  displayName?: string;
+  idToken?: string;
+  scope?: string;
+  tokenType?: string;
+  providerSpecificData: Record<string, unknown>;
+};
+
+export type PortalConnectionPushResult =
+  | { status: "stale" | "conflict" | "provider_changed"; tokenVersion: number }
+  | { status: "ok"; id: string };
+
+/** Hash the normalized push so retries cannot change even an optional/omitted field. */
+function portalPayloadHash(input: PortalConnectionPush): string {
+  const canonical = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value as JsonRecord)
+          .filter(([, nested]) => nested !== undefined)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, nested]) => [key, canonical(nested)])
+      );
+    }
+    return value;
+  };
+  return createHash("sha256")
+    .update(JSON.stringify(canonical(input)))
+    .digest("hex");
+}
+
+/** Compare only push-owned fields. Unspecified labels and operator metadata are retained. */
+function portalPushMatches(existing: JsonRecord, input: PortalConnectionPush): boolean {
+  if (
+    existing.accessToken !== input.accessToken ||
+    existing.expiresAt !== input.expiresAt ||
+    (existing.isActive !== false && existing.isActive !== 0) !== input.enabled
+  )
+    return false;
+  for (const field of ["email", "name", "displayName", "idToken", "scope", "tokenType"] as const) {
+    if (input[field] !== undefined && existing[field] !== input[field]) return false;
+  }
+  const metadata = toRecord(existing.providerSpecificData);
+  return Object.entries(input.providerSpecificData).every(([key, value]) =>
+    isDeepStrictEqual(metadata[key], value)
+  );
+}
+
+/** Holds the SQLite write lock through lookup, version check, and persistence. */
+export function upsertPortalProviderConnection(
+  externalId: string,
+  input: PortalConnectionPush
+): PortalConnectionPushResult {
+  const db = getDbInstance() as unknown as DbLike;
+  const result = db
+    .transaction((): PortalConnectionPushResult => {
+      const rows = db
+        .prepare(
+          "SELECT * FROM provider_connections WHERE json_extract(provider_specific_data, '$.portalExternalId') = ?"
+        )
+        .all(externalId) as JsonRecord[];
+      // Never pick an arbitrary row if historical data contains a duplicate external ID.
+      if (rows.length > 1) throw new Error("Duplicate Portal external ID");
+      const row = rows[0];
+      const current = row ? toRecord(rowToCamel(row)) : null;
+      const metadata = current ? toRecord(current.providerSpecificData) : {};
+      const version = Number(metadata.portalTokenVersion || 0);
+      const payloadHash = portalPayloadHash(input);
+      if (current && input.tokenVersion < version)
+        return { status: "stale", tokenVersion: version };
+      if (current && current.provider !== input.provider)
+        return { status: "provider_changed", tokenVersion: version };
+      if (current && input.tokenVersion === version) {
+        const plaintext = decryptConnectionFields({ ...current });
+        if (
+          (typeof metadata.portalPayloadHash === "string" &&
+            metadata.portalPayloadHash !== payloadHash) ||
+          !portalPushMatches(plaintext, input)
+        )
+          return { status: "conflict", tokenVersion: version };
+      }
+
+      const providerSpecificData: JsonRecord = {
+        ...metadata,
+        ...input.providerSpecificData,
+        portalExternalId: externalId,
+        portalTokenVersion: input.tokenVersion,
+        portalPayloadHash: payloadHash,
+      };
+      delete providerSpecificData.expiredRetry;
+      delete providerSpecificData.refreshCircuit;
+      const now = new Date().toISOString();
+      const fields = {
+        accessToken: input.accessToken,
+        refreshToken: null,
+        expiresAt: input.expiresAt,
+        tokenExpiresAt: input.expiresAt,
+        isActive: input.enabled,
+        testStatus: "active",
+        providerSpecificData: normalizeConnectionProviderSpecificData(
+          input.provider,
+          providerSpecificData,
+          input,
+          metadata
+        ),
+        ...(input.email !== undefined ? { email: input.email } : {}),
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.displayName !== undefined ? { displayName: input.displayName } : {}),
+        ...(input.idToken !== undefined ? { idToken: input.idToken } : {}),
+        ...(input.scope !== undefined ? { scope: input.scope } : {}),
+        ...(input.tokenType !== undefined ? { tokenType: input.tokenType } : {}),
+      };
+      if (current) {
+        const id = String(current.id);
+        reconcileCodexUsageHistory(db, {
+          connectionId: id,
+          existing: row,
+          merged: { ...current, ...fields },
+        });
+        _updateConnectionRow(
+          db,
+          id,
+          encryptConnectionFields({
+            ...current,
+            ...fields,
+            lastError: null,
+            lastErrorAt: null,
+            lastErrorType: null,
+            lastErrorSource: null,
+            errorCode: null,
+            expiredRetryCount: null,
+            expiredRetryAt: null,
+            rateLimitedUntil: null,
+            backoffLevel: 0,
+            updatedAt: now,
+          })
+        );
+        return { status: "ok", id };
+      }
+      const id = uuidv4();
+      const max = db
+        .prepare("SELECT MAX(priority) as maxP FROM provider_connections WHERE provider = ?")
+        .get(input.provider) as JsonRecord | undefined;
+      _insertConnectionRow(
+        db,
+        encryptConnectionFields({
+          id,
+          provider: input.provider,
+          authType: "oauth",
+          name: input.name || input.email || input.displayName || null,
+          priority: toNumberOrZero(toRecord(max).maxP) + 1,
+          createdAt: now,
+          updatedAt: now,
+          proxyEnabled: true,
+          perKeyProxyEnabled: false,
+          ...fields,
+        })
+      );
+      return { status: "ok", id };
+    })
+    .immediate();
+  if (result.status === "ok") {
+    backupDbFile("pre-write");
+    invalidateDbCache("connections");
+    bumpProxyConfigGeneration();
+  }
+  return result;
 }
 
 function _insertConnectionRow(db: DbLike, conn: JsonRecord) {

@@ -73,6 +73,36 @@ test("checkConnection marks refresh-capable provider with no refresh token as ex
   assert.ok(updated?.lastHealthCheckAt);
 });
 
+// A Portal-managed row has no refresh token BY DESIGN — the Portal owns the rotating
+// one. The no-refresh-token branch above must not touch it, and the sweep must return
+// before writing any health state at all.
+test("checkConnection leaves Portal-managed OAuth connections to the Portal refresh authority", async () => {
+  await resetStorage();
+
+  const connection = await providersDb.createProviderConnection({
+    provider: "codex",
+    authType: "oauth",
+    name: "Sponsored by: anhth2",
+    accessToken: "portal-managed-access-token",
+    refreshToken: null,
+    expiresAt: "2030-01-01T00:00:00.000Z",
+    testStatus: "active",
+    isActive: true,
+    providerSpecificData: {
+      portalExternalId: "portal-1",
+      portalTokenVersion: 7,
+    },
+  });
+
+  await tokenHealthCheck.checkConnection(connection);
+
+  const updated = await providersDb.getProviderConnectionById(getCreatedConnectionId(connection));
+  assert.equal(updated?.testStatus, "active");
+  assert.equal(updated?.isActive, true);
+  assert.ok(!updated?.errorCode);
+  assert.ok(!updated?.lastHealthCheckAt);
+});
+
 // A connection WITH a refresh token must NOT be force-expired by this branch. Use a
 // far-future known expiry so the sweep returns before attempting any network refresh,
 // isolating the behavior of the no-refresh-token branch.

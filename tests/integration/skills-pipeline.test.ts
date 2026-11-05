@@ -999,9 +999,10 @@ test("web_search fallback emits a native web_search_call output item with source
   assert.equal(response.status, 200);
   assert.ok(webSearchCall, "should append a native web_search_call output item");
   assert.equal(webSearchCall.status, "completed");
-  assert.equal(webSearchAction?.type, "web_search");
+  assert.equal(webSearchAction?.type, "search");
   assert.equal(webSearchAction?.query, "latest omniroute release");
   assert.ok(Array.isArray(webSearchAction?.sources), "sources should be an array");
+  assert.equal(webSearchAction?.sources?.[0]?.type, "url");
   assert.equal(webSearchAction?.sources?.[0]?.title, "Web Search Call Result");
   assert.equal(webSearchAction?.sources?.[0]?.url, "https://example.com/web-search-call");
   assert.equal(
@@ -1079,9 +1080,17 @@ test("web_search fallback executes stream:true responses requests non-streaming 
   const functionCallOutput = json.output.find((item) => item.type === "function_call_output");
 
   assert.equal(response.status, 200);
-  // The upstream must have been called non-streaming so interception can run.
-  assert.equal(upstreamBodies.length, 1);
-  assert.equal(upstreamBodies[0].stream, false);
+  // The upstream must have been called non-streaming so interception can run. The
+  // web-search fallback now also drives the server-owned tool loop, and this mock
+  // answers every leg with the same tool call, so one leg is issued per follow-up
+  // plus the initial one — the invariant is that none of them streams, and that the
+  // loop stays inside its follow-up budget instead of spinning.
+  const { MAX_FOLLOW_UPS } = await import("../../src/lib/skills/serverOwnedToolLoop.ts");
+  assert.equal(upstreamBodies.length, MAX_FOLLOW_UPS + 1);
+  assert.ok(
+    upstreamBodies.every((body) => body.stream === false),
+    "every upstream leg must be non-streaming"
+  );
   assert.ok(webSearchCall, "should return a web_search_call item for a stream:true request");
   const webSearchAction = webSearchCall?.action as
     { query?: string; sources?: Array<Record<string, unknown>> } | undefined;

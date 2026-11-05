@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { withEarlyStreamKeepalive } from "../../open-sse/utils/earlyStreamKeepalive.ts";
+import {
+  OPENAI_RESPONSES_ERROR_FRAME,
+  withEarlyStreamKeepalive,
+} from "../../open-sse/utils/earlyStreamKeepalive.ts";
+import { takeEarlyKeepaliveBytes } from "../../open-sse/utils/earlyKeepaliveByteBuffer.ts";
 
 const ENCODER = new TextEncoder();
 const DECODER = new TextDecoder();
@@ -68,6 +72,112 @@ test("slow path forwards SSE stream content", async () => {
 });
 
 // Upstream read failures are covered by early-stream-midstream-failure-17292.test.ts.
+// ── Upstream error with 0 bytes → error frame emitted ─────────────────────
+
+test("upstream error with 0 bytes forwarded emits error frame", async () => {
+  const response = new Response(streamThenError([]), {
+    status: 200,
+    headers: { "content-type": "text/event-stream" },
+  });
+  const delayed = new Promise<Response>((resolve) => setTimeout(() => resolve(response), 20));
+  const result = await withEarlyStreamKeepalive(delayed, { thresholdMs: 1 });
+  assert.equal(result.status, 200);
+  const text = await drainStream(result.body!);
+  assert.match(text, /Upstream stream failed before completion/);
+});
+
+// ── Upstream error after partial content → terminal failure ──────────────
+
+function streamThenError(chunks: string[]): ReadableStream<Uint8Array> {
+  let index = 0;
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (index < chunks.length) controller.enqueue(ENCODER.encode(chunks[index++]));
+      else controller.error(new Error("upstream token=secret died mid-stream"));
+    },
+  });
+}
+
+test("Responses slow path emits one sanitized response.failed after partial read error", async () => {
+  const response = new Response(
+    streamThenError([
+      'event: response.created\ndata: {"type":"response.created","response":{"id":"resp_1"}}\n\n',
+      'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"partial"}\n\n',
+    ]),
+    { headers: { "content-type": "text/event-stream" } }
+  );
+  const delayed = new Promise<Response>((resolve) => setTimeout(() => resolve(response), 20));
+  const result = await withEarlyStreamKeepalive(delayed, {
+    thresholdMs: 1,
+    intervalMs: 50,
+    errorFrame: OPENAI_RESPONSES_ERROR_FRAME,
+  });
+  const text = await drainStream(result.body!);
+  assert.match(text, /"delta":"partial"/);
+  assert.equal((text.match(/event: response.failed/g) || []).length, 1);
+  const failed = JSON.parse(text.match(/event: response.failed\ndata: ([^\n]+)/)![1]);
+  assert.equal(failed.type, "response.failed");
+  assert.equal(failed.response.status, "failed");
+  assert.equal(failed.response.error.code, "stream_disconnected");
+  assert.doesNotMatch(text, /token=secret/);
+});
+
+test("Responses failure and separator are recorded once, not forwarded upstream content", async () => {
+  const correlationId = `terminal-accounting-${Date.now()}`;
+  const partial = 'data: {"type":"response.output_text.delta","delta":"cut';
+  const response = new Response(streamThenError([partial]), {
+    headers: { "content-type": "text/event-stream" },
+  });
+  const delayed = new Promise<Response>((resolve) => setTimeout(() => resolve(response), 20));
+  const result = await withEarlyStreamKeepalive(delayed, {
+    thresholdMs: 1,
+    errorFrame: OPENAI_RESPONSES_ERROR_FRAME,
+    correlationId,
+  });
+  const text = await drainStream(result.body!);
+  const recorded = takeEarlyKeepaliveBytes(correlationId).join("");
+  assert.equal((text.match(/event: response.failed/g) || []).length, 1);
+  assert.equal((recorded.match(/event: response.failed/g) || []).length, 1);
+  assert.ok(recorded.includes("\n\n"));
+  assert.doesNotMatch(recorded, /"delta":"cut/);
+  assert.deepEqual(takeEarlyKeepaliveBytes(correlationId), []);
+});
+
+test("Responses slow path reports a clean EOF without a terminal event", async () => {
+  const response = new Response(
+    makeSseStream([
+      'event: response.created\ndata: {"type":"response.created"}\n\n',
+      'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"partial"}\n\n',
+    ]),
+    { headers: { "content-type": "text/event-stream" } }
+  );
+  const delayed = new Promise<Response>((resolve) => setTimeout(() => resolve(response), 20));
+  const result = await withEarlyStreamKeepalive(delayed, {
+    thresholdMs: 1,
+    errorFrame: OPENAI_RESPONSES_ERROR_FRAME,
+  });
+  const text = await drainStream(result.body!);
+  assert.equal((text.match(/event: response.failed/g) || []).length, 1);
+  assert.match(text, /"delta":"partial"/);
+});
+
+test("Responses slow path does not append failure after a terminal event", async () => {
+  const response = new Response(
+    streamThenError([
+      'event: response.completed\ndata: {"type":"response.completed","response":{"status":"completed"}}\n\n',
+    ]),
+    { headers: { "content-type": "text/event-stream" } }
+  );
+  const delayed = new Promise<Response>((resolve) => setTimeout(() => resolve(response), 20));
+  const result = await withEarlyStreamKeepalive(delayed, {
+    thresholdMs: 1,
+    intervalMs: 50,
+    errorFrame: OPENAI_RESPONSES_ERROR_FRAME,
+  });
+  const text = await drainStream(result.body!);
+  assert.match(text, /response.completed/);
+  assert.doesNotMatch(text, /response.failed/);
+});
 
 // ── Handler rejection → error frame ───────────────────────────────────────
 

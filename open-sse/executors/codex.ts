@@ -1,6 +1,7 @@
 import { isResponsesTerminalLine, RESPONSES_TERMINAL_EVENT_TYPES } from "./opencodeMuseSpark.ts";
 import { newestChromeProfile } from "../utils/browserProfiles.ts";
 import { getApiKeyCodexServiceTier } from "../../src/lib/providers/codexApiKeyServiceMode";
+import { isPortalManagedConnection } from "../../src/lib/providers/portalManagedConnection";
 import { buildErrorBody } from "../utils/error.ts";
 import { getCodexRequestDefaults } from "@/lib/providers/requestDefaults";
 import {
@@ -37,7 +38,7 @@ import {
   resolveCodexThreadScopedPromptCacheKey,
   withCodexFingerprintCredentials,
 } from "../config/codexIdentity.ts";
-import { getAccessToken } from "../services/tokenRefresh.ts";
+import { getAccessToken, NO_REFRESH_NEEDED } from "../services/tokenRefresh.ts";
 import { isUnrecoverableRefreshError } from "../services/tokenRefresh/shared.ts";
 import { sanitizeCodexResponsesInput } from "../services/responsesInputSanitizer.ts";
 import { applyReasoningInputPolicy } from "../services/reasoningInputPolicy.ts";
@@ -1309,6 +1310,7 @@ export class CodexExecutor extends BaseExecutor {
    * base class returned null causing the request to fail instead of refreshing.
    */
   async refreshCredentials(credentials: ProviderCredentials, log?: ExecutorLog | null) {
+    if (isPortalManagedConnection(credentials)) return NO_REFRESH_NEEDED;
     if (!credentials?.refreshToken) {
       log?.warn?.("TOKEN_REFRESH", "Codex: no refresh token available, re-authentication required");
       return null;

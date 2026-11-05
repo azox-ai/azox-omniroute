@@ -203,11 +203,16 @@ export async function interceptToolCalls(
 }
 
 export function extractToolCalls(response: any, modelIdOrSourceFormat: string): ToolCall[] {
-  // Accept either a sourceFormat ("openai" | "claude") or a model ID string.
-  // Map known sourceFormat values; fall back to detectProvider for model IDs.
+  // Accept either a sourceFormat ("openai" | "claude" | "openai-responses") or a model ID
+  // string. Map known sourceFormat values; fall back to detectProvider for model IDs.
+  // Responses shares the OpenAI call shape, so it reuses the "openai" reader.
   const format =
-    modelIdOrSourceFormat === "openai" || modelIdOrSourceFormat === "claude"
-      ? modelIdOrSourceFormat
+    modelIdOrSourceFormat === "openai" ||
+    modelIdOrSourceFormat === "claude" ||
+    modelIdOrSourceFormat === "openai-responses"
+      ? modelIdOrSourceFormat === "openai-responses"
+        ? "openai"
+        : modelIdOrSourceFormat
       : undefined;
   const provider =
     format === "claude"
@@ -317,16 +322,19 @@ export function buildWebSearchCallItem(
           : typeof source.display_url === "string"
             ? source.display_url
             : "";
-      return { title, url, caption };
+      return { type: "url" as const, title, url, caption };
     })
-    .filter((source): source is { title: string; url: string; caption: string } => source !== null);
+    .filter(
+      (source): source is { type: "url"; title: string; url: string; caption: string } =>
+        source !== null
+    );
 
   return {
     id: `ws_${call.id}`,
     type: "web_search_call",
     status: "completed",
     action: {
-      type: "web_search",
+      type: "search",
       query: typeof record.query === "string" ? record.query : "",
       sources,
     },
@@ -690,12 +698,13 @@ export function formatEscapeHatchResponse(
   serverCalls: ToolCall[],
   results: ExecutedToolResult[],
   clientCalls: ToolCall[],
-  sourceFormat: "openai" | "claude",
+  sourceFormat: "openai" | "claude" | "openai-responses",
   serializedResultTextById?: Map<string, string>
 ): Record<string, unknown> {
   const serverIds = new Set(serverCalls.map((c) => c.id));
 
-  if (sourceFormat === "openai") {
+  // Responses shares the OpenAI output-item shape, so it takes the same branch.
+  if (sourceFormat === "openai" || sourceFormat === "openai-responses") {
     // Check for Responses API format.
     const responsesOutput = getOpenAIResponseOutput(response);
     if (responsesOutput) {

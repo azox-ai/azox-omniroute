@@ -525,7 +525,11 @@ export async function runProviderExecutionPipeline(
       !authRefreshed &&
       (status === 401 || status === 403) &&
       typeof connection.refreshCredentials === "function" &&
-      !(await shouldSkipCredentialRefresh(target.provider, attempt.response))
+      !(await shouldSkipCredentialRefresh(
+        target.provider,
+        attempt.response,
+        connection.getCredentials()
+      ))
     ) {
       if (isPassiveCodex(target.provider)) recordRejectedToken(connection.getCredentials());
       const refreshed = await connection.refreshCredentials(connection.getCredentials());

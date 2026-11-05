@@ -135,6 +135,12 @@ export function getCircuitBreakerStatus(): Record<string, CircuitBreakerStatusEn
   return result;
 }
 
+/** Clear only the connection-scoped refresh breaker when Portal replaces its credentials. */
+export function resetConnectionRefreshCircuit(provider: string, connectionId: string): void {
+  if (!provider || !connectionId?.trim()) return;
+  delete _circuitBreaker[breakerKey(provider, connectionId, "connection")];
+}
+
 /**
  * Record a successful refresh — resets circuit breaker for provider.
  */

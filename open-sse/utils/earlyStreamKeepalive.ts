@@ -32,6 +32,7 @@
  */
 
 import { recordEarlyKeepaliveBytes } from "./earlyKeepaliveByteBuffer.ts";
+import { synthResponsesFailure } from "./diagnostics.ts";
 import { classifyProviderSafetyError } from "./providerSafety.ts";
 import {
   SYNTHETIC_RESPONSES_SEQUENCE_NUMBER,
@@ -42,6 +43,10 @@ import { withUpstreamErrorDetail } from "./upstreamErrorDetail.ts";
 import { mergeAbortSignals } from "../executors/base/mergeAbortSignals.ts";
 
 const ENCODER = new TextEncoder();
+const OVERSIZED_TERMINAL_HEADER =
+  /^event:[ \t]*response\.(?:completed|failed|incomplete)[ \t]*\r?$/m;
+const OVERSIZED_TERMINAL_DATA_TYPE =
+  /^data:[ \t]*\{[ \t]*"type"[ \t]*:[ \t]*"response\.(?:completed|failed|incomplete)"/m;
 const KEEPALIVE_FRAME = ENCODER.encode(": keepalive\n\n");
 // OpenAI-compatible keepalive: a JSON chunk without an application choice.
 // Some OpenAI-compatible clients parse every non-empty SSE line as JSON and
@@ -698,6 +703,22 @@ export async function withEarlyStreamKeepalive(
             // Real SSE stream — forward it verbatim.
             upstreamReader = response.body.getReader();
             let bytesForwarded = 0;
+            let responsesTerminalSeen = false;
+            const terminalDecoder = errorFrameFormat === "responses" ? new TextDecoder() : null;
+            let pendingEvent = "";
+            let oversizedEventIsTerminal: boolean | null = null;
+            const emitResponsesFailure = (reason: "abort" | "no_terminal") => {
+              // The upstream may stop halfway through a data line. Terminate that
+              // incomplete event before writing a separate, parseable failure frame.
+              if (pendingEvent) {
+                const separator = ENCODER.encode("\n\n");
+                controller.enqueue(separator);
+                recordClientBytes(separator);
+              }
+              const failureFrame = ENCODER.encode(synthResponsesFailure(reason));
+              controller.enqueue(failureFrame);
+              recordClientBytes(failureFrame);
+            };
             try {
               while (true) {
                 const { done, value } = await upstreamReader.read();
@@ -705,16 +726,74 @@ export async function withEarlyStreamKeepalive(
                 if (value) {
                   controller.enqueue(value);
                   bytesForwarded += value.byteLength;
+                  if (terminalDecoder && !responsesTerminalSeen) {
+                    pendingEvent += terminalDecoder.decode(value, { stream: true });
+                    let boundary: RegExpExecArray | null;
+                    while ((boundary = /\r?\n\r?\n/.exec(pendingEvent))) {
+                      const event = pendingEvent.slice(0, boundary.index);
+                      pendingEvent = pendingEvent.slice(boundary.index + boundary[0].length);
+                      const oversizedVerdict = oversizedEventIsTerminal;
+                      oversizedEventIsTerminal = null;
+                      if (oversizedVerdict !== null) {
+                        if (oversizedVerdict) {
+                          responsesTerminalSeen = true;
+                          pendingEvent = "";
+                          break;
+                        }
+                        continue;
+                      }
+                      const data = event.split(/\r?\n/).filter((line) => line.startsWith("data:"));
+                      try {
+                        const payload = JSON.parse(
+                          data.map((line) => line.slice(5).trimStart()).join("\n")
+                        );
+                        if (
+                          ["response.completed", "response.failed", "response.incomplete"].includes(
+                            payload?.type
+                          )
+                        ) {
+                          responsesTerminalSeen = true;
+                          break;
+                        }
+                      } catch {
+                        // Ignore non-JSON SSE frames; only a complete terminal event counts.
+                      }
+                    }
+                    if (pendingEvent.length > 65_536) {
+                      if (oversizedEventIsTerminal === null) {
+                        oversizedEventIsTerminal =
+                          OVERSIZED_TERMINAL_HEADER.test(pendingEvent) ||
+                          OVERSIZED_TERMINAL_DATA_TYPE.test(pendingEvent);
+                      }
+                      pendingEvent = pendingEvent.slice(-8_192);
+                    }
+                  }
                 }
               }
+              // A clean EOF that never carried a Responses terminal event leaves the
+              // client waiting forever — the stream ended, so synthesize the failure
+              // the upstream owed it.
+              if (terminalDecoder && !aborted && !responsesTerminalSeen) {
+                emitResponsesFailure("no_terminal");
+              }
             } catch {
-              if (aborted) return;
-              if (bytesForwarded === 0) {
+              if (aborted || responsesTerminalSeen) return;
+              try {
+                warn?.(
+                  "EARLY_KEEPALIVE",
+                  `upstream SSE read failed after ${bytesForwarded} bytes` +
+                    (correlationId ? ` correlationId=${correlationId}` : "")
+                );
+              } catch {
+                /* logging must never break the stream */
+              }
+              if (terminalDecoder) {
+                emitResponsesFailure("abort");
+              } else if (bytesForwarded === 0) {
                 controller.enqueue(errorFrame);
                 recordClientBytes(errorFrame);
               } else {
-                // The last forwarded bytes may end inside an SSE frame. Fail the
-                // transport instead of appending invalid SSE or reporting clean EOF.
+                // Non-Responses streams retain their fatal transport behavior.
                 // Never expose the upstream exception, its stack, or its cause.
                 streamErrored = true;
                 controller.error(new Error("Upstream stream failed before completion."));

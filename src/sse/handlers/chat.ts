@@ -123,6 +123,7 @@ import {
   withCorrelationId,
   withModalityBridgeHeader,
   withConversationId,
+  withAffinityTraceHeaders,
 } from "./chatHelpers";
 import { buildModalityBridgeHeader } from "@/lib/guardrails/modalityBridge/bridgeStats";
 import { type VideoBridgeLog, deriveVideoBridgeLog } from "./chat/videoBridgeLog.ts";
@@ -1391,7 +1392,14 @@ async function handleChatImplementation(
     }
     return withModalityBridgeHeader(
       withConversationId(
-        withCorrelationId(withSessionHeader(response, sessionId), reqId),
+        withCorrelationId(
+          withAffinityTraceHeaders(
+            withSessionHeader(response, sessionId),
+            sessionAffinityKey,
+            reqId
+          ),
+          reqId
+        ),
         conversationId
       ),
       modalityBridgeHeader
@@ -1445,7 +1453,10 @@ async function handleChatImplementation(
   recordTelemetry(telemetry);
   return withModalityBridgeHeader(
     withConversationId(
-      withCorrelationId(withSessionHeader(response, sessionId), reqId),
+      withCorrelationId(
+        withAffinityTraceHeaders(withSessionHeader(response, sessionId), sessionAffinityKey, reqId),
+        reqId
+      ),
       conversationId
     ),
     modalityBridgeHeader

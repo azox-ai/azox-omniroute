@@ -11,6 +11,7 @@
 // importers (open-sse/index.ts, executors, src/sse/services/tokenRefresh.ts,
 // tests) keep a stable surface.
 import { AsyncLocalStorage } from "node:async_hooks";
+import { isPortalManagedConnection } from "@/lib/providers/portalManagedConnection";
 export { isPassiveCodex } from "./tokenRefresh/passiveCodex.ts";
 import { isPassiveCodex, resolvePassiveCodex } from "./tokenRefresh/passiveCodex.ts";
 import { PROVIDERS } from "../config/constants.ts";
@@ -567,6 +568,8 @@ export async function getAccessToken(
   onPersist?: RefreshPersistFn
 ) {
   if (isPassiveCodex(provider)) return resolvePassiveCodex(credentials);
+  if (isPortalManagedConnection(credentials)) return NO_REFRESH_NEEDED;
+
   if (!credentials || !credentials.refreshToken || typeof credentials.refreshToken !== "string") {
     log?.warn?.("TOKEN_REFRESH", `No valid refresh token available for provider: ${provider}`);
     return null;
@@ -728,6 +731,7 @@ async function _refreshWithFreshCredentials(provider, credentials, log, proxyCon
     try {
       const { getProviderConnectionById } = await import("@/lib/db/providers");
       const dbConnection = await getProviderConnectionById(credentials.connectionId);
+      if (isPortalManagedConnection(dbConnection)) return NO_REFRESH_NEEDED;
       if (dbConnection && dbConnection.refreshToken) {
         const now = Date.now();
         const dbExpiresAt = parseTokenExpiryMs(dbConnection.expiresAt);

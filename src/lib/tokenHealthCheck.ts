@@ -16,6 +16,7 @@ import {
   updateProviderConnection,
 } from "@/lib/db/providers";
 import { getCachedProviderConnectionById } from "@/lib/db/readCache";
+import { isPortalManagedConnection } from "@/lib/providers/portalManagedConnection";
 import { getSettings } from "@/lib/db/settings";
 import { resolveGuardedProxyConfig } from "@/lib/tokenHealthCheckProxyGuard";
 import * as tokenRefresh from "@omniroute/open-sse/services/tokenRefresh.ts";
@@ -598,6 +599,9 @@ export async function checkConnection(conn: any) {
 
   const latestConnection = (await getCachedProviderConnectionById(conn.id)) || conn;
   conn = latestConnection;
+
+  // Portal owns rotation; a local health sweep must never expire its access-only rows.
+  if (isPortalManagedConnection(conn)) return;
 
   // Per-provider opt-out of proactive refresh (e.g. Codex/OpenAI cascade
   // providers) — their token stays on the reactive, serialized 401 path while

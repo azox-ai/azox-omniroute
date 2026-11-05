@@ -1,11 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { openaiResponsesToOpenAIRequest } from "../../open-sse/translator/request/openai-responses.ts";
+import { openaiToClaudeRequest } from "../../open-sse/translator/request/openai-to-claude.ts";
 
 const {
   prepareWebSearchFallbackBody,
   supportsNativeWebSearchFallbackBypass,
   OMNIROUTE_WEB_SEARCH_FALLBACK_TOOL_NAME,
 } = await import("../../open-sse/services/webSearchFallback.ts");
+
+type ClaudeSearchToolBody = {
+  tools: Array<{ input_schema: { properties: { query: { type: string } }; required: string[] } }>;
+  tool_choice: { name: string };
+};
 
 // Regression for #2390: when the target is a Responses-API provider, the injected
 // omniroute_web_search tool must use the FLAT function shape ({ type, name }), not the
@@ -20,6 +27,63 @@ function makeBody() {
     tools: [{ type: "web_search" }],
   };
 }
+
+test("Responses web search fallback keeps required query through Claude translation", () => {
+  const { body } = prepareWebSearchFallbackBody(
+    {
+      model: "claude-sonnet-5",
+      input: "Search current weather",
+      tools: [{ type: "web_search_preview" }],
+      tool_choice: { type: "web_search_preview" },
+    },
+    {
+      sourceFormat: "openai-responses",
+      targetFormat: "claude",
+      nativeCodexPassthrough: false,
+    }
+  );
+  const chat = openaiResponsesToOpenAIRequest("claude-sonnet-5", body, false, {}) as Record<
+    string,
+    unknown
+  >;
+  const claude = openaiToClaudeRequest("claude-sonnet-5", chat, false) as ClaudeSearchToolBody;
+  assert.equal(claude.tools[0].input_schema.properties.query.type, "string");
+  assert.deepEqual(claude.tools[0].input_schema.required, ["query"]);
+  assert.match(claude.tool_choice.name, /omniroute_web_search$/);
+});
+
+test("Chat web search fallback retains Chat tool schema when Claude is target", () => {
+  const { body } = prepareWebSearchFallbackBody(
+    { ...makeBody(), tool_choice: { type: "web_search" } },
+    { sourceFormat: "openai", targetFormat: "claude", nativeCodexPassthrough: false }
+  );
+  const claude = openaiToClaudeRequest("claude-sonnet-5", body, false) as ClaudeSearchToolBody;
+  assert.equal(claude.tools[0].input_schema.properties.query.type, "string");
+  assert.deepEqual(claude.tools[0].input_schema.required, ["query"]);
+  assert.match(claude.tool_choice.name, /omniroute_web_search$/);
+});
+
+test("Claude web search fallback retains Claude tool_choice when Responses is target", () => {
+  const { body } = prepareWebSearchFallbackBody(
+    {
+      messages: [{ role: "user", content: "Search news" }],
+      tools: [{ type: "web_search_20250305" }],
+      tool_choice: { type: "web_search_20250305" },
+    },
+    {
+      provider: "minimax",
+      sourceFormat: "claude",
+      targetFormat: "openai-responses",
+      nativeCodexPassthrough: false,
+    }
+  );
+  const tool = body.tools[0] as { input_schema: { properties: { query: { type: string } } } };
+  assert.equal(tool.input_schema.properties.query.type, "string");
+  assert.deepEqual(body.tool_choice, {
+    type: "tool",
+    name: OMNIROUTE_WEB_SEARCH_FALLBACK_TOOL_NAME,
+  });
+});
 
 test("#2390 web_search fallback is FLAT for Responses API target", () => {
   const { body, fallback } = prepareWebSearchFallbackBody(makeBody(), {
@@ -334,7 +398,7 @@ test("OpenAI -> Claude (non-passthrough): built-in web_search IS still converted
   assert.equal(fallback.enabled, true);
   assert.equal(fallback.toolName, OMNIROUTE_WEB_SEARCH_FALLBACK_TOOL_NAME);
   assert.equal(fallback.convertedToolCount, 1);
-  const tools = (body.tools as Record<string, any>[]) || [];
+  const tools = (body.tools as Array<{ function?: { name: string }; name?: string }>) || [];
   const toolNames = tools.map((t) => (t.function ? t.function.name : t.name));
   assert.ok(toolNames.includes(OMNIROUTE_WEB_SEARCH_FALLBACK_TOOL_NAME));
 });

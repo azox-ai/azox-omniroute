@@ -78,9 +78,9 @@ test("Adapta stream errors are sanitized in an isolated executor fixture", async
         `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`
     );
     assert.equal(result.signal, null);
-    assert.match(result.stdout, /ℹ tests 1/);
-    assert.match(result.stdout, /ℹ pass 1/);
-    assert.match(result.stdout, /ℹ fail 0/);
+    assert.match(result.stdout, /(?:ℹ|#) tests 1/);
+    assert.match(result.stdout, /(?:ℹ|#) pass 1/);
+    assert.match(result.stdout, /(?:ℹ|#) fail 0/);
     assert.doesNotMatch(result.stdout + result.stderr, new RegExp(SYNTHETIC_API_KEY_SECRET));
 
     assert.equal(process.env.DATA_DIR, originalDataDir);

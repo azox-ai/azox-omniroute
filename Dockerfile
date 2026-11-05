@@ -4,7 +4,8 @@
 # trusts the compromised eMudhra intermediates (https://emudhra.we-have-a-problem.com/).
 # 26.12.1 is the first 26.x that rejects them; tests/unit/build/docker-ca-baseline.test.mjs
 # keeps it from going below that.
-FROM node:26.12.1-trixie-slim AS base
+ARG NODE_IMAGE=node:26.12.1-trixie-slim
+FROM ${NODE_IMAGE} AS base
 WORKDIR /app
 
 # Mirrors for builders whose network cannot reach the default sources
@@ -84,8 +85,8 @@ RUN set -eux; \
   npm --version; \
   npm cache clean --force
 
-# ── Builder ────────────────────────────────────────────────────────────────
-FROM base AS builder
+# ── Dependencies (reused by builds and runtime flavors) ────────────────────
+FROM base AS deps
 ARG NODE_DIST_URL=
 
 # No telemetry, anywhere. Disable Next.js's anonymous build-time telemetry
@@ -141,6 +142,12 @@ RUN --mount=type=cache,id=s/92ca8a61-c1ba-421f-a389-d48ac7258c2d-npm-cache,targe
   && node -e "require('better-sqlite3')(':memory:').close()" \
   && node -e "const wreq=require('wreq-js'); if(typeof wreq.createTransport!=='function') process.exit(1)"
 
+FROM deps AS builder
+
+# Build-only memory profile; runtime stages inherit from base, not builder.
+ARG OMNIROUTE_BUILD_LOW_MEMORY=1
+ENV OMNIROUTE_BUILD_LOW_MEMORY=${OMNIROUTE_BUILD_LOW_MEMORY}
+
 # Bundler for the image build. The DOCKERFILE default is webpack
 # (OMNIROUTE_USE_TURBOPACK=0), deliberately different from the repo's code
 # default for local dev and non-Docker builds (Turbopack, =1 — read by
@@ -189,18 +196,13 @@ ENV DASHBOARD_ALLOW_EMBED=$DASHBOARD_ALLOW_EMBED
 # Docker-only: npm/Electron/VPS builds must bundle the REAL manager (#6344).
 ENV OMNIROUTE_MITM_STUB=1
 
-# Raise the V8 heap ceiling for the build. The webpack production optimization
-# pass needs more than V8's default ceiling (~2 GB) for a codebase this size; a
-# memory-constrained Docker build otherwise dies with "FATAL ERROR: ... JavaScript
-# heap out of memory" during the builder stage (#4076). Turbopack's compile is
-# native (Rust) and less V8-heap-bound, but the prerender/export phase still runs
-# on V8, so keep the ceiling. NODE_OPTIONS propagates to the spawned `next build`
-# child (build-next-isolated.mjs → resolveNextBuildEnv spreads process.env).
-# Build-only; the runtime heap is set separately on the runner stage
-# (OMNIROUTE_MEMORY_MB). Override: `--build-arg OMNIROUTE_BUILD_MEMORY_MB=6144`.
-# Default raised 4096 → 6144 (#10060): the Next 16 production pass on a codebase
-# this size intermittently OOMs a build worker at 4 GB on memory-tight hosts.
-ARG OMNIROUTE_BUILD_MEMORY_MB=6144
+# V8 old-space is only part of the builder's total RAM. The low-memory
+# webpack profile above disables its module cache; cap the heap at 4 GiB
+# and reserve at least 2 GiB for native allocations, BuildKit and file cache.
+# scripts/build/docker-image.sh enforces the total 6 GiB/no-swap budget.
+# Build-only: runtime stages set their own heap independently.
+# Override for a larger builder: --build-arg OMNIROUTE_BUILD_MEMORY_MB=6144.
+ARG OMNIROUTE_BUILD_MEMORY_MB=4096
 ENV NODE_OPTIONS="--max-old-space-size=${OMNIROUTE_BUILD_MEMORY_MB}"
 
 # Cap Next.js build worker pools. Next 16 defaults to `os.cpus().length - 1`
@@ -250,7 +252,7 @@ RUN --mount=type=cache,id=s/92ca8a61-c1ba-421f-a389-d48ac7258c2d-next-cache,targ
   && node --input-type=module -e "import { createRequire } from 'node:module'; import { pathToFileURL } from 'node:url'; const standaloneRoot = '/app/.build/next/standalone/node_modules/'; const require = createRequire('/app/.build/next/standalone/package.json'); for (const pkg of ['@atjsh/llmlingua-2', '@huggingface/transformers', 'js-tiktoken']) { const resolved = require.resolve(pkg); if (!resolved.startsWith(standaloneRoot)) throw new Error(pkg + ' resolved outside standalone: ' + resolved); await import(pathToFileURL(resolved).href); } const onnxRuntime = require.resolve('onnxruntime-node'); if (!onnxRuntime.startsWith(standaloneRoot)) throw new Error('onnxruntime-node resolved outside standalone: ' + onnxRuntime); await import(pathToFileURL(onnxRuntime).href);"
 
 # ── Runner base ────────────────────────────────────────────────────────────
-FROM base AS runner-base
+FROM base AS runtime-base
 
 LABEL org.opencontainers.image.title="omniroute" \
   org.opencontainers.image.description="Unified AI proxy — route any LLM through one endpoint" \
@@ -286,32 +288,8 @@ RUN mkdir -p /app/data && chown node:node /app /app/data
 # `-e REQUIRE_API_KEY=false` for an intentionally keyless deployment.
 ENV REQUIRE_API_KEY=true
 
-# `npm run build` (build-next-isolated → assembleStandalone) bundles ALL runtime
-# files into .build/next/standalone/ — .next, node_modules, migrations, scripts,
-# docs, and the previously hand-COPY'd modules below (@swc/helpers, pino-*, split2,
-# migrations). assembleStandalone copies them straight from the builder's
-# node_modules, so they are present regardless of NFT/Turbopack trace behaviour.
-# The old per-module overrides were therefore pure duplication and were removed
-# (build-output-isolation cleanup). See scripts/build/assembleStandalone.mjs
-# (EXTRA_MODULE_ENTRIES) for the single source of truth.
-COPY --chown=node:node --from=builder /app/.build/next/standalone ./
-# better-sqlite3 is the one exception still copied explicitly: assembleStandalone
-# only syncs its native build/ dir; the JS wrapper (lib/, package.json) is left to
-# Next.js tracing. bootstrap-env requires SQLite BEFORE the standalone server
-# starts, so guarantee the complete package independent of trace behaviour.
-COPY --chown=node:node --from=builder /app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
-RUN test -f /app/node_modules/better-sqlite3/build/Release/better_sqlite3.node
-# migrations land at <standalone>/migrations via assembleStandalone; point the runtime at them.
+# assembleStandalone places migrations here for every runtime flavor.
 ENV OMNIROUTE_MIGRATIONS_DIR=/app/migrations
-
-# Docker healthcheck script — not traced by Next.js standalone output, so copy
-# it explicitly. The HEALTHCHECK CMD references it as `node healthcheck.mjs`.
-COPY --chown=node:node --from=builder /app/scripts/dev/healthcheck.mjs ./healthcheck.mjs
-
-# Every COPY above hands its files to the baked-in `node` non-root user
-# (UID/GID 1000) at copy time. Do NOT add a `RUN chown -R node:node /app`
-# afterwards: in the overlay filesystem changing ownership rewrites every file
-# into a new layer, which stored the ~2 GB standalone build twice (#13990).
 
 EXPOSE 20128
 
@@ -327,6 +305,86 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD ["node", "healthcheck.mjs"]
 
 CMD ["node", "dev/run-standalone.mjs"]
+
+# CLI dependencies do not depend on the app output. The bounded build script
+# serializes BuildKit vertices so this install cannot overlap webpack.
+FROM runtime-base AS cli-deps
+USER root
+
+# Install system dependencies required by openclaw (git+ssh references).
+RUN --mount=type=cache,id=s/92ca8a61-c1ba-421f-a389-d48ac7258c2d-apt-cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,id=s/92ca8a61-c1ba-421f-a389-d48ac7258c2d-apt-lists,target=/var/lib/apt/lists,sharing=locked \
+  apt-get update \
+  && apt-get install -y --no-install-recommends git ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && git config --system url."https://github.com/".insteadOf "ssh://git@github.com/"
+
+# Install CLI tools globally. Separate layer from apt for better cache reuse.
+# Pinned to exact versions per Diego's diagnosis in #12576 — floating
+# `@latest` causes two CI failures:
+#   1. `openclaw` ships a breaking major ~weekly; overnight builds silently
+#      advance to a version that no longer matches the tested combo stack.
+#   2. `codex` / `claude-code` dev pre-releases (`@next`, dist-tags) mutate
+#      API surface without notice; reproducible builds need a SHA-pinned dev
+#      build, not the floating `@latest`.
+# `@qoder-ai/qodercli` (#9292): the Qoder PAT (`pt-*`) login path shells out to
+# this binary for WASM-signed Cosy auth; without it the executor's own
+# `cli_not_found` handling is correct but every PAT login fails with
+# `spawn qodercli ENOENT`. Same pinning rationale as the tools above.
+RUN --mount=type=cache,id=s/92ca8a61-c1ba-421f-a389-d48ac7258c2d-npm-cache,target=/root/.npm \
+  npm install -g --no-audit --no-fund \
+    --allow-scripts=@anthropic-ai/claude-code,@qoder-ai/qodercli,droid,openclaw,sharp,koffi,tree-sitter-bash,protobufjs \
+    @openai/codex@0.165.0 \
+    @anthropic-ai/claude-code@2.1.260 \
+    droid@0.212.0 \
+    openclaw@2026.9.1 \
+    @qoder-ai/qodercli@1.1.63
+
+USER node
+
+# npm 12 blocks unapproved install hooks with only a warning. These checks
+# catch missing native binaries/lifecycle artifacts before exporting an image,
+# and verify that the installed CLIs work as the actual runtime user.
+RUN codex --version && claude --version && droid --version \
+  && openclaw --version && qodercli --version
+
+# Optional Docker client and Compose, split from the shared CLI layer so hosts
+# without a Docker socket can keep using the smaller runner-cli-no-docker target.
+FROM cli-deps AS cli-docker-deps
+USER root
+RUN --mount=type=cache,id=s/92ca8a61-c1ba-421f-a389-d48ac7258c2d-apt-cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,id=s/92ca8a61-c1ba-421f-a389-d48ac7258c2d-apt-lists,target=/var/lib/apt/lists,sharing=locked \
+  apt-get update \
+  && apt-get install -y --no-install-recommends docker.io docker-compose \
+  && rm -rf /var/lib/apt/lists/*
+USER node
+RUN docker --version && docker-compose --version
+
+FROM runtime-base AS runner-base
+
+# `npm run build` (build-next-isolated → assembleStandalone) bundles ALL runtime
+# files into .build/next/standalone/ — .next, node_modules, migrations, scripts,
+# docs, and the previously hand-COPY'd modules below (@swc/helpers, pino-*, split2,
+# migrations). assembleStandalone copies them straight from the builder's
+# node_modules, so they are present regardless of NFT/Turbopack trace behaviour.
+# The old per-module overrides were therefore pure duplication and were removed
+# (build-output-isolation cleanup). See scripts/build/assembleStandalone.mjs
+# (EXTRA_MODULE_ENTRIES) for the single source of truth.
+COPY --chown=node:node --from=builder /app/.build/next/standalone ./
+# better-sqlite3 is the one exception still copied explicitly: assembleStandalone
+# only syncs its native build/ dir; the JS wrapper (lib/, package.json) is left to
+# Next.js tracing. bootstrap-env requires SQLite BEFORE the standalone server
+# starts, so guarantee the complete package independent of trace behaviour.
+COPY --chown=node:node --from=builder /app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
+RUN test -f /app/node_modules/better-sqlite3/build/Release/better_sqlite3.node
+# Docker healthcheck script — not traced by Next.js standalone output, so copy
+# it explicitly. The HEALTHCHECK CMD references it as `node healthcheck.mjs`.
+COPY --chown=node:node --from=builder /app/scripts/dev/healthcheck.mjs ./healthcheck.mjs
+
+# Every COPY above hands its files to the baked-in `node` non-root user
+# (UID/GID 1000) at copy time. Do NOT add a `RUN chown -R node:node /app`
+# afterwards: in the overlay filesystem changing ownership rewrites every file
+# into a new layer, which stored the ~2 GB standalone build twice (#13990).
 
 # ── Runner Web (web-cookie providers: Gemini Web, Claude Turnstile) ───────────
 #
@@ -373,76 +431,15 @@ RUN --mount=type=cache,id=s/92ca8a61-c1ba-421f-a389-d48ac7258c2d-apt-cache,targe
 
 USER node
 
-FROM runner-base AS runner-cli-core
+FROM cli-deps AS runner-cli-no-docker
 
-# Shared CLI runtime: retains every supported AI CLI while keeping Docker client
-# packages out of the common layer. Deployments without a Docker socket (including
-# the homelab image) can stop at runner-cli-no-docker and avoid installing tools
-# that cannot reach a daemon. The published runner-cli target below keeps its
-# historical Docker client + Compose behavior. Drop back to root briefly so we can
-# install system + global npm packages, then return to the `node` non-root user
-# before the CMD inherited from runner-base runs.
-USER root
+# Assemble last: changing app source reuses the OS and global CLI layers.
+COPY --chown=node:node --from=runner-base /app ./
+COPY --chown=node:node --from=deps /app/node_modules/playwright-core ./node_modules/playwright-core
+COPY --chown=node:node --from=deps /app/node_modules/playwright ./node_modules/playwright
 
-# The CLI image can use the internal ChatGPT Web (Codex) Chromium sidecar over
-# CDP without installing a second browser in this container.
-COPY --from=builder /app/node_modules/playwright-core ./node_modules/playwright-core
-COPY --from=builder /app/node_modules/playwright ./node_modules/playwright
-
-# Install system dependencies required by openclaw (git+ssh references).
-RUN --mount=type=cache,id=s/92ca8a61-c1ba-421f-a389-d48ac7258c2d-apt-cache,target=/var/cache/apt,sharing=locked \
-  --mount=type=cache,id=s/92ca8a61-c1ba-421f-a389-d48ac7258c2d-apt-lists,target=/var/lib/apt/lists,sharing=locked \
-  apt-get update \
-  && apt-get install -y --no-install-recommends git ca-certificates \
-  && rm -rf /var/lib/apt/lists/* \
-  && git config --system url."https://github.com/".insteadOf "ssh://git@github.com/"
-
-# Install CLI tools globally. Separate layer from apt for better cache reuse.
-# Pinned to exact versions per Diego's diagnosis in #12576 — floating
-# `@latest` causes two CI failures:
-#   1. `openclaw` ships a breaking major ~weekly; overnight builds silently
-#      advance to a version that no longer matches the tested combo stack.
-#   2. `codex` / `claude-code` dev pre-releases (`@next`, dist-tags) mutate
-#      API surface without notice; reproducible builds need a SHA-pinned dev
-#      build, not the floating `@latest`.
-# `@qoder-ai/qodercli` (#9292): the Qoder PAT (`pt-*`) login path shells out to
-# this binary for WASM-signed Cosy auth; without it the executor's own
-# `cli_not_found` handling is correct but every PAT login fails with
-# `spawn qodercli ENOENT`. Same pinning rationale as the tools above.
-# npm 12 requires an explicit allowlist for required global lifecycle scripts.
-RUN --mount=type=cache,id=s/92ca8a61-c1ba-421f-a389-d48ac7258c2d-npm-cache,target=/root/.npm \
-  npm install -g --no-audit --no-fund --allow-scripts=@anthropic-ai/claude-code,openclaw \
-    @openai/codex@0.165.0 \
-    @anthropic-ai/claude-code@2.1.260 \
-    droid@0.212.0 \
-    openclaw@2026.9.1 \
-    @qoder-ai/qodercli@1.1.63
-
-USER node
-
-RUN --network=none codex --version \
-  && claude --version \
-  && droid --version \
-  && openclaw --version \
-  && qodercli --version
-
-# Docker-client-free CLI flavor for hosts that do not mount /var/run/docker.sock
-# and do not set DOCKER_HOST. It still includes Codex, Claude Code, Droid,
-# OpenClaw, Qoder CLI, Playwright, and git; only the unusable Docker/Compose
-# clients differ.
-FROM runner-cli-core AS runner-cli-no-docker
-
-# Backward-compatible generic CLI flavor. Existing builds targeting runner-cli
-# retain Docker and Compose clients for operators that connect to a daemon. It
-# stays the LAST stage so a build without --target still produces it.
-FROM runner-cli-core AS runner-cli
-
-USER root
-
-RUN --mount=type=cache,id=s/92ca8a61-c1ba-421f-a389-d48ac7258c2d-apt-cache,target=/var/cache/apt,sharing=locked \
-  --mount=type=cache,id=s/92ca8a61-c1ba-421f-a389-d48ac7258c2d-apt-lists,target=/var/lib/apt/lists,sharing=locked \
-  apt-get update \
-  && apt-get install -y --no-install-recommends docker.io docker-compose \
-  && rm -rf /var/lib/apt/lists/*
-
-USER node
+# Keep runner-cli as the final/default image with Docker and Compose available.
+FROM cli-docker-deps AS runner-cli
+COPY --chown=node:node --from=runner-base /app ./
+COPY --chown=node:node --from=deps /app/node_modules/playwright-core ./node_modules/playwright-core
+COPY --chown=node:node --from=deps /app/node_modules/playwright ./node_modules/playwright

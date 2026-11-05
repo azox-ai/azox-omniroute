@@ -329,14 +329,20 @@ export function buildFollowUpSourceBody(
   const maxResultBytes = input.maxResultBytes ?? MAX_RESULT_BYTES_PER_TOOL;
   const maxTotalResultBytes = input.maxTotalResultBytes ?? MAX_RESULT_BYTES_TOTAL;
 
-  if (sourceFormat !== "openai" && sourceFormat !== "claude") {
-    throw new Error('sourceFormat must be "openai" or "claude"');
+  if (
+    sourceFormat !== "openai" &&
+    sourceFormat !== "claude" &&
+    sourceFormat !== "openai-responses"
+  ) {
+    throw new Error('sourceFormat must be "openai", "claude" or "openai-responses"');
   }
 
   assertValidBudget("maxResultBytes", maxResultBytes);
   assertValidBudget("maxTotalResultBytes", maxTotalResultBytes);
 
-  if (!Array.isArray(sourceBody.messages)) {
+  // Responses replays `input` items, not `messages` — the array check below is the
+  // chat-shaped contract and must not reject a valid Responses body.
+  if (sourceFormat !== "openai-responses" && !Array.isArray(sourceBody.messages)) {
     throw new Error("buildFollowUpSourceBody requires sourceBody.messages array");
   }
 
@@ -363,6 +369,56 @@ export function buildFollowUpSourceBody(
   }
 
   const matchedIds = new Set(results.map((result) => result.id));
+  if (sourceFormat === "openai-responses") {
+    // Responses follow-up replays the original `input` plus the model's own reasoning
+    // and function_call items, then appends the tool outputs. Dropping the reasoning
+    // replay would make the follow-up look like a fresh turn to the upstream.
+    const inputItems = Array.isArray(sourceBody.input)
+      ? sourceBody.input
+      : typeof sourceBody.input === "string"
+        ? [{ role: "user", content: sourceBody.input }]
+        : null;
+    if (!inputItems) throw new Error("buildFollowUpSourceBody requires Responses input");
+    const root =
+      previousResponse.response && typeof previousResponse.response === "object"
+        ? (previousResponse.response as Record<string, unknown>)
+        : previousResponse;
+    const output = Array.isArray(root.output) ? root.output : [];
+    const responseCalls = output.filter((item) => {
+      if (!item || typeof item !== "object") return false;
+      const call = item as Record<string, unknown>;
+      return call.type === "function_call" && matchedIds.has(String(call.call_id));
+    });
+    for (const call of toolCalls) {
+      if (
+        responseCalls.filter((item) => (item as Record<string, unknown>).call_id === call.id)
+          .length !== 1
+      ) {
+        throw new Error(
+          `buildFollowUpSourceBody requires exactly one Responses call for ${call.id}`
+        );
+      }
+    }
+    const replay = output.filter((item) => {
+      if (!item || typeof item !== "object") return false;
+      const record = item as Record<string, unknown>;
+      return (
+        record.type === "reasoning" ||
+        (record.type === "function_call" && matchedIds.has(String(record.call_id)))
+      );
+    });
+    const responseResults = boundedResults.map((bounded, index) => ({
+      type: "function_call_output",
+      call_id: results[index].id,
+      output: bounded.text,
+    }));
+    return {
+      ...sourceBody,
+      input: [...inputItems, ...replay, ...responseResults],
+      tool_choice: "auto",
+      stream: false,
+    };
+  }
   const messages = [...(sourceBody.messages as unknown[])];
 
   if (sourceFormat === "openai") {

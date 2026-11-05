@@ -25,6 +25,7 @@ import {
   finalizeServerOwnedFollowUpRequest,
   followUpLegInput,
 } from "../chatCore/serverOwnedToolLoopWire.ts";
+import { extractRequestToolMetadata } from "../chatCore/requestToolIdentity.ts";
 
 import {
   buildStreamingResponseHeaders,
@@ -45,6 +46,7 @@ export {
 
 import { HTTP_STATUS } from "../../config/constants.ts";
 import { buildMalformedResponseDiagnostic } from "../../utils/responseShapeDiagnostic.ts";
+import { FORMATS } from "../../translator/formats.ts";
 
 import { lockModel } from "../../services/accountFallback.ts";
 
@@ -481,7 +483,12 @@ export async function runNonStreamingResponse(deps: NonStreamingDeps) {
     // non-streaming request even with SERVER_OWNED_TOOL_LOOP_ENABLED off (the default).
     // Derive it only when the loop can run, and fail closed rather than crash: no
     // identity means no fence, and without a fence the loop must not run.
-    let toolLoopEnabled = isServerOwnedToolLoopEnabled();
+    // The Responses endpoint keeps its tool loop client-side by default, but the
+    // web-search fallback has no client-side executor — the loop has to run here so the
+    // search call is intercepted and a native web_search_call item is synthesised.
+    const responsesWebSearchFallback =
+      webSearchFallbackPlan.enabled && sourceFormat === FORMATS.OPENAI_RESPONSES;
+    let toolLoopEnabled = isServerOwnedToolLoopEnabled() || responsesWebSearchFallback;
     let postInjectionRequestIdentity = "";
     if (toolLoopEnabled) {
       try {
@@ -505,6 +512,7 @@ export async function runNonStreamingResponse(deps: NonStreamingDeps) {
       enabled: toolLoopEnabled,
       stream,
       isResponsesEndpoint,
+      responsesWebSearchFallback,
       sourceFormat,
       initialLeg: legResult,
       sourceBody: (body || {}) as Record<string, unknown>,
@@ -560,6 +568,9 @@ export async function runNonStreamingResponse(deps: NonStreamingDeps) {
           targetFormat,
         });
         translatedBody = followUpFinalized.translatedBody;
+        // Re-translation creates response-side ledgers again; they are not upstream fields.
+        extractRequestToolMetadata(translatedBody as Record<string, unknown>);
+        delete (translatedBody as Record<string, unknown>)._disableToolPrefix;
         syncExecuteTranslatedBody(translatedBody);
         return runNonStreamingProviderLeg(
           followUpLegInput(

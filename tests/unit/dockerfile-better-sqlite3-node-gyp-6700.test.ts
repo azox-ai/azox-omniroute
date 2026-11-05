@@ -60,18 +60,18 @@ function instructions(source: string): string[] {
   return result;
 }
 
-function builderInstallRun(source: string): string {
+function dependencyInstallRun(source: string): string {
   const all = instructions(source);
   const start = all.findIndex((line) => {
     const words = line.toUpperCase().split(/\s{1,100}/);
-    return words[0] === "FROM" && words.slice(-2).join(" ") === "AS BUILDER";
+    return words[0] === "FROM" && words.slice(-2).join(" ") === "AS DEPS";
   });
-  assert.ok(start >= 0, "Dockerfile must declare a builder stage");
+  assert.ok(start >= 0, "Dockerfile must declare a deps stage");
   const later = all.slice(start + 1);
   const next = later.findIndex((line) => line.toUpperCase().startsWith("FROM "));
   const stage = next < 0 ? later : later.slice(0, next);
   const runs = stage.filter((line) => line.startsWith("RUN ") && line.includes("npm ci "));
-  assert.equal(runs.length, 1, "one builder install RUN is required");
+  assert.equal(runs.length, 1, "one dependency install RUN is required");
   let command = runs[0].slice(4).trimStart();
   while (command.startsWith("--mount=")) {
     const end = command.indexOf(" ");
@@ -150,7 +150,7 @@ test(
   "#6700 builder stage compiles better-sqlite3 via a direct node-gyp rebuild, not `npm rebuild`",
   shellOptions,
   () => {
-    const calls = executeInstall(builderInstallRun(dockerfile));
+    const calls = executeInstall(dependencyInstallRun(dockerfile));
     assert.deepEqual(calls[1].args, [gyp, "rebuild", "--force_build=1"]);
     assert.ok(calls[1].cwd.endsWith("/node_modules/better-sqlite3"));
     assert.equal(
@@ -164,7 +164,7 @@ test(
   "#6700 the better-sqlite3 rebuild happens after `npm ci --ignore-scripts` and before the smoke-load",
   shellOptions,
   () => {
-    const calls = executeInstall(builderInstallRun(dockerfile), "https://headers.invalid/node");
+    const calls = executeInstall(dependencyInstallRun(dockerfile), "https://headers.invalid/node");
     assert.deepEqual(
       calls.map((call) => call.args[0]),
       ["ci", gyp, "-e", "-e"]
@@ -184,7 +184,7 @@ const invalidRuns: [string, string, string][] = [
 ];
 for (const [name, before, after] of invalidRuns) {
   test(`#6700 rejects ${name}`, shellOptions, () => {
-    const command = builderInstallRun(dockerfile);
+    const command = dependencyInstallRun(dockerfile);
     assert.ok(command.includes(before), "mutation must target an existing boundary");
     assert.throws(() =>
       executeInstall(command.replace(before, after), "https://headers.invalid/node")
@@ -193,15 +193,15 @@ for (const [name, before, after] of invalidRuns) {
 }
 
 test("#6700 comments cannot supply the required install instruction", () => {
-  assert.throws(() => builderInstallRun("RUN echo AS builder\nRUN npm ci --ignore-scripts"));
+  assert.throws(() => dependencyInstallRun("RUN echo AS deps\nRUN npm ci --ignore-scripts"));
   assert.throws(() =>
-    builderInstallRun("FROM node AS builder\n# RUN npm ci --ignore-scripts\nFROM node AS runner")
+    dependencyInstallRun("FROM node AS deps\n# RUN npm ci --ignore-scripts\nFROM node AS runner")
   );
 });
 
 test("#6700 cd in a different RUN cannot authorize the rebuild", shellOptions, () => {
-  const command = builderInstallRun(dockerfile);
+  const command = dependencyInstallRun(dockerfile);
   const changed = command.replace("cd node_modules/better-sqlite3", "true");
-  const source = `FROM node AS builder\nRUN cd node_modules/better-sqlite3\nRUN ${changed}\nFROM node AS runner`;
-  assert.throws(() => executeInstall(builderInstallRun(source)));
+  const source = `FROM node AS deps\nRUN cd node_modules/better-sqlite3\nRUN ${changed}\nFROM node AS runner`;
+  assert.throws(() => executeInstall(dependencyInstallRun(source)));
 });

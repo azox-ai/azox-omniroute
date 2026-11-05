@@ -7,6 +7,7 @@ import { isCloudEnabled, resolveProxyForConnection } from "@/lib/db/settings";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/lib/cloudSync";
 import { validateProviderApiKey } from "@/lib/providers/validation";
+import { isPortalManagedConnection } from "@/lib/providers/portalManagedConnection";
 import { projectProviderValidationResultForPublicResponse } from "@/lib/providers/validation/transport";
 import { getCliRuntimeStatus } from "@/shared/services/cliRuntime";
 import { buildQoderCliNotFoundHint } from "@omniroute/open-sse/services/qoderCliResolve.ts";
@@ -371,6 +372,17 @@ export async function testOAuthConnection(
   connection: any,
   timeoutMs: number = OAUTH_TEST_TIMEOUT_MS
 ) {
+  if (isPortalManagedConnection(connection)) {
+    const error = "Portal-managed credentials must be renewed by Portal";
+    return {
+      valid: false,
+      skipped: true,
+      error,
+      refreshed: false,
+      diagnosis: makeDiagnosis("portal_managed", "local", error, "portal_managed"),
+    };
+  }
+
   const config = OAUTH_TEST_CONFIG[connection.provider];
 
   if (!config) {
@@ -1080,6 +1092,14 @@ export async function testSingleConnection(
   // connection off during the probe, and the pre-probe snapshot would switch it back on.
   const latest = ((await getProviderConnectionById(connectionId)) ??
     connection) as typeof connection;
+  if (isPortalManagedConnection(connection) || isPortalManagedConnection(latest)) {
+    return {
+      ...(await testOAuthConnection(latest)),
+      latencyMs,
+      runtime: publicRuntime,
+      testedAt: null,
+    };
+  }
   const operatorDisabled = isOperatorDisabled(latest);
 
   // An unsupported validation says nothing about the credential: keep its health as is, but switch

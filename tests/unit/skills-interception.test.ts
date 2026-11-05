@@ -106,19 +106,33 @@ test("buildWebSearchCallItem emits a native web_search_call item only for succes
 
   assert.equal(item?.type, "web_search_call");
   assert.equal(item?.status, "completed");
-  assert.equal((item?.action as Record<string, unknown>).type, "web_search");
+  assert.equal((item?.action as Record<string, unknown>).type, "search");
   assert.equal((item?.action as Record<string, unknown>).query, "latest omniroute release");
   const sources = (item?.action as Record<string, unknown>).sources as Array<
     Record<string, string>
   >;
   assert.deepEqual(sources, [
     {
+      type: "url",
       title: "OmniRoute Docs",
       url: "https://example.com/omniroute",
       caption: "The OmniRoute documentation",
     },
-    { title: "https://example.com/no-title", url: "https://example.com/no-title", caption: "" },
+    {
+      type: "url",
+      title: "https://example.com/no-title",
+      url: "https://example.com/no-title",
+      caption: "",
+    },
   ]);
+  assert.deepEqual(
+    (
+      buildWebSearchCallItem(call, { success: true, query: "empty", results: [] })?.action as {
+        sources: unknown[];
+      }
+    ).sources,
+    []
+  );
 
   // Non-search fallback calls never produce a web_search_call item.
   assert.equal(

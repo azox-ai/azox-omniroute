@@ -55,7 +55,7 @@ for (const protocol of protocols) {
     ["complete", 'data: {"delta":"hello"}\n\n'],
     ["partial", 'data: {"delta":"hel'],
   ]) {
-    test(`${protocol.name}: read failure after ${shape} SSE rejects instead of clean EOF (#17292)`, async () => {
+    test(`${protocol.name}: read failure after ${shape} SSE has a fatal terminal (#17292)`, async () => {
       const f = await fixture(protocol);
       f.upstream.enqueue(encoder.encode(chunk));
       assert.equal(decoder.decode((await f.reader.read()).value), chunk);
@@ -64,22 +64,40 @@ for (const protocol of protocols) {
       const raw = new Error("secret-token upstream-private-host");
       raw.stack = "PRIVATE_UPSTREAM_STACK";
       f.upstream.error(raw);
-      let failure: unknown;
-      await assert.rejects(pending, (error: unknown) => {
-        assert.ok(error instanceof Error);
-        assert.equal(error.message, "Upstream stream failed before completion.");
-        assert.notEqual(error, raw);
-        assert.equal(error.cause, undefined);
-        assert.doesNotMatch(
-          String(error.stack),
-          /secret-token|upstream-private-host|PRIVATE_UPSTREAM_STACK/
-        );
-        failure = error;
-        return true;
-      });
-      // One terminal failure, not an appended frame or a second synthesized error.
-      await assert.rejects(f.reader.closed, (error: unknown) => error === failure);
-      await assert.rejects(f.reader.read(), (error: unknown) => error === failure);
+      if (protocol.name === "responses") {
+        let text = "";
+        let next = await pending;
+        while (!next.done) {
+          text += decoder.decode(next.value);
+          next = await f.reader.read();
+        }
+        const terminal = text.split(/\n\n/).filter(Boolean).at(-1)!;
+        assert.match(terminal, /^event: response.failed\ndata: /);
+        const data = JSON.parse(terminal.split("\ndata: ")[1]);
+        assert.equal(data.type, "response.failed");
+        assert.equal(data.response.status, "failed");
+        assert.equal(data.response.error.code, "stream_disconnected");
+        assert.equal((text.match(/event: response.failed/g) || []).length, 1);
+        assert.doesNotMatch(text, /secret-token|upstream-private-host|PRIVATE_UPSTREAM_STACK/);
+        await f.reader.closed;
+        assert.equal((await f.reader.read()).done, true);
+      } else {
+        let failure: unknown;
+        await assert.rejects(pending, (error: unknown) => {
+          assert.ok(error instanceof Error);
+          assert.equal(error.message, "Upstream stream failed before completion.");
+          assert.notEqual(error, raw);
+          assert.equal(error.cause, undefined);
+          assert.doesNotMatch(
+            String(error.stack),
+            /secret-token|upstream-private-host|PRIVATE_UPSTREAM_STACK/
+          );
+          failure = error;
+          return true;
+        });
+        await assert.rejects(f.reader.closed, (error: unknown) => error === failure);
+        await assert.rejects(f.reader.read(), (error: unknown) => error === failure);
+      }
       assert.equal(getEventListeners(f.client.signal, "abort").length, 0);
       assert.equal(getEventListeners(f.deadline.signal, "abort").length, 0);
       assert.equal(f.deadline.signal.aborted, false);
@@ -92,7 +110,12 @@ for (const protocol of protocols) {
     const text = decoder.decode((await f.reader.read()).value);
     assert.equal((text.match(/\ndata: |^data: /g) || []).length, 1);
     const data = JSON.parse(text.split("data: ")[1].trim());
-    assert.equal(data.error.message, "Upstream stream failed before completion.");
+    if (protocol.name === "responses") {
+      assert.equal(data.type, "response.failed");
+      assert.equal(data.response.error.code, "stream_disconnected");
+    } else {
+      assert.equal(data.error.message, "Upstream stream failed before completion.");
+    }
     assert.doesNotMatch(text, /secret-token/);
     assert.equal((await f.reader.read()).done, true);
   });

@@ -658,7 +658,7 @@ export async function runStreamingResponse(deps: StreamingDeps) {
       providerResponse.status === HTTP_STATUS.FORBIDDEN) &&
     !hadStreamOptions && // Skip refresh if failure may be from stream_options removal, not auth
     !(await shouldIsolateProbeFailures()) &&
-    !(await shouldSkipCredentialRefresh(provider, providerResponse))
+    !(await shouldSkipCredentialRefresh(provider, providerResponse, credentials))
   ) {
     if (isPassiveCodex(provider)) recordRejectedToken(credentials);
     // Fix A: wrap refreshCredentials in runWithOnPersist so the persist callback

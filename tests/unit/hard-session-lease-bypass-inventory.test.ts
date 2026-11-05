@@ -133,6 +133,8 @@ const EXPECTED: Record<InventoryKind, Record<string, number>> = {
     // (getProviderConnectionById, 1->0): it reads one narrow, credential-free state projection
     // (id, rate_limited_until, test_status) through getRawProviderConnections for the whole
     // request. Transparency only, no credential selection and no dispatch.
+    // Portal sync looks up the managed row for CRUD only; no upstream dispatch (class C).
+    "src/app/api/internal/portal/connections/[externalId]/route.ts": 1,
     // Two of the three connection re-resolution sites moved into the streaming
     // leg with the decomposition (same sites, new home).
     "open-sse/handlers/chatCore.ts": 1,

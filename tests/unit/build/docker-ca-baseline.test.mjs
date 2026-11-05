@@ -22,7 +22,13 @@ function atLeast(version, min) {
 
 function imageTags(text, image) {
   const re = new RegExp(`(?:^FROM\\s+|image:\\s*)${image.replace("/", "\\/")}:(\\S+)`, "gm");
-  return [...text.matchAll(re)].map((m) => m[1]);
+  const tags = [...text.matchAll(re)].map((m) => m[1]);
+  // The main Dockerfile parameterizes its FROM; validate the actual default pin too.
+  if (image === "node" && /^FROM \$(?:\{NODE_IMAGE\}|NODE_IMAGE)(?=\s|$)/m.test(text)) {
+    const imageArg = /^ARG NODE_IMAGE=node:(\S+)$/m.exec(text);
+    if (imageArg) tags.push(imageArg[1]);
+  }
+  return tags;
 }
 
 const cases = [

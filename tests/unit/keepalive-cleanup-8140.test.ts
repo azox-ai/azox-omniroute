@@ -30,11 +30,25 @@ function sseResponse(body: string): Response {
 
 test("#8140: timer count is stable after client disconnect (no leaked interval)", async () => {
   const controller = new AbortController();
-  const result = await withEarlyStreamKeepalive(new Promise<Response>(() => {}), {
-    thresholdMs: 5,
-    intervalMs: 15,
-    signal: controller.signal,
-  });
+  // _getActiveHandles() includes unrelated sockets and excludes unref'd timers.
+  // Capture this wrapper's own interval instead of measuring global handle drift.
+  const originalSetInterval = globalThis.setInterval;
+  let keepaliveTimer: NodeJS.Timeout | undefined;
+  globalThis.setInterval = ((...args: Parameters<typeof setInterval>) => {
+    keepaliveTimer = originalSetInterval(...args);
+    return keepaliveTimer;
+  }) as typeof setInterval;
+  let result: Response;
+  try {
+    result = await withEarlyStreamKeepalive(new Promise<Response>(() => {}), {
+      thresholdMs: 5,
+      intervalMs: 15,
+      signal: controller.signal,
+    });
+  } finally {
+    globalThis.setInterval = originalSetInterval;
+  }
+  assert.ok(keepaliveTimer, "slow path must schedule a keepalive interval");
 
   const reader = result.body!.getReader();
   const { value } = await reader.read();
@@ -52,15 +66,10 @@ test("#8140: timer count is stable after client disconnect (no leaked interval)"
   const timed = new Promise<boolean>((r) => setTimeout(() => r(false), 2000));
   assert.equal(await Promise.race([drained, timed]), true, "stream should close after abort");
 
-  await new Promise((r) => setTimeout(r, 30));
-
-  const count1 = countTimeoutHandles();
-  await new Promise((r) => setTimeout(r, 30));
-  const count2 = countTimeoutHandles();
   assert.equal(
-    count1,
-    count2,
-    "handle count should be stable after disconnect (no leaked interval ticking)"
+    (keepaliveTimer as NodeJS.Timeout & { _destroyed: boolean })._destroyed,
+    true,
+    "the keepalive interval must be cleared on client disconnect"
   );
 });
 

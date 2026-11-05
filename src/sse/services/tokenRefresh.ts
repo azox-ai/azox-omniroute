@@ -5,6 +5,7 @@ import { stripTrailingSlashes } from "@omniroute/open-sse/utils/urlSanitize.ts";
 import { registerCredentialRefresher } from "@omniroute/open-sse/utils/registeredCredentialRefresher.ts";
 import { updateProviderConnection } from "@/lib/db/providers";
 import { parseTokenExpiryMs } from "@/lib/tokenHealthCheckExpiry";
+import { isPortalManagedConnection } from "@/lib/providers/portalManagedConnection";
 import { resolveProxyForConnection } from "@/lib/db/settings";
 import { resolveProxyForProvider, hasBlockingProxyAssignment } from "@/lib/db/proxies";
 import {
@@ -258,6 +259,13 @@ export async function updateProviderCredentials(connectionId: string, newCredent
 
 // Local-specific: Check and refresh token proactively
 export async function checkAndRefreshToken(provider: string, credentials: any) {
+  // LLM Portal owns the rotating refresh token for its rows and pushes a fresh
+  // access token on its own schedule. A local proactive refresh would present a
+  // token the Portal already rotated past, so skip it entirely.
+  if (isPortalManagedConnection(credentials)) {
+    return credentials;
+  }
+
   let updatedCredentials = { ...credentials };
 
   // Check regular token expiry. Use the provider-specific lead time so rotating-

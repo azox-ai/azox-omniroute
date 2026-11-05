@@ -65,6 +65,76 @@ function okLeg(overrides: Partial<NonStreamingProviderLegResult & { kind: "ok" }
   };
 }
 
+test("Responses web search executes server-side and returns final model answer", async () => {
+  let nextBody: Record<string, unknown> | undefined;
+  const call = {
+    type: "function_call",
+    call_id: "call_search",
+    name: "omniroute_web_search",
+    arguments: '{"query":"docs"}',
+  };
+  const leg = okLeg({ response: { output: [call] }, responsePayloadFormat: "openai-responses" });
+  const result = await applyServerOwnedToolLoopIfNeeded({
+    enabled: true,
+    stream: false,
+    isResponsesEndpoint: true,
+    sourceFormat: FORMATS.OPENAI_RESPONSES,
+    responsesWebSearchFallback: true,
+    initialLeg: leg,
+    sourceBody: { input: "find docs", tools: [{ type: "function", name: "omniroute_web_search" }] },
+    skillsModelId: "openai",
+    executionContext: {
+      apiKeyId: "test",
+      sessionId: "test",
+      requestId: "test",
+      builtinToolNames: ["omniroute_web_search"],
+      customSkillExecutionEnabled: false,
+    },
+    expectedConnectionId: "conn-1",
+    executeServerOwned: async () => [
+      {
+        id: "call_search",
+        name: "omniroute_web_search",
+        result: {
+          success: true,
+          query: "docs",
+          results: [{ title: "Docs", url: "https://example.com" }],
+        },
+        replayed: false,
+      },
+    ],
+    followUpLeg: async (body) => {
+      nextBody = body;
+      return okLeg({
+        response: {
+          output: [{ type: "message", content: [{ type: "output_text", text: "Found docs" }] }],
+        },
+      });
+    },
+    logReceipt: () => {},
+  });
+  assert.equal(result.kind, "ok");
+  if (result.kind !== "ok") return;
+  assert.equal(result.loop.followUps, 1);
+  const output = result.leg.response.output as Array<{
+    type: string;
+    action?: { query: string };
+    content?: Array<{ text: string }>;
+  }>;
+  assert.deepEqual(
+    output.map((item) => item.type),
+    ["web_search_call", "message"]
+  );
+  assert.equal(output[0].action?.query, "docs");
+  assert.deepEqual(output[1].content?.[0].text, "Found docs");
+  assert.equal(
+    (nextBody?.input as Array<{ type: string }>).filter(
+      (item) => item.type === "function_call_output"
+    ).length,
+    1
+  );
+});
+
 test("flag-off skips the loop and does not resume", async () => {
   let followUps = 0;
   const result = await applyServerOwnedToolLoopIfNeeded({

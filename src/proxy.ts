@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { runAuthzPipeline } from "./server/authz/pipeline";
 import { headlessGateResponse } from "./lib/system/headless";
+import { hasValidPortalSyncToken } from "./lib/auth/portalSync";
 
 // #10627: the proxy runs in its own Next.js runtime and never executes
 // instrumentation-node.ts's startup warm-ups, so its FIRST request used to
@@ -27,6 +29,15 @@ export async function proxy(request: NextRequest) {
   // src/lib/system/headless.ts and docs/guides/HEADLESS.md.
   const headlessResponse = headlessGateResponse(request.nextUrl.pathname);
   if (headlessResponse) return headlessResponse;
+  // LLM Portal sync is a machine-to-machine internal surface authenticated by its
+  // own shared secret, so it bypasses the management authz pipeline. The prefix is
+  // deliberately narrow — it does NOT open up `/api/internal/*`. The route handler
+  // re-validates the same token, so this is a boundary, not the only check.
+  if (request.nextUrl.pathname.startsWith("/api/internal/portal/")) {
+    return hasValidPortalSyncToken(request)
+      ? NextResponse.next()
+      : NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   return runAuthzPipeline(request, { enforce: true });
 }
 

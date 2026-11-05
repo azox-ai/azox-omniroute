@@ -12,7 +12,10 @@ import { InspectorCaptureModeActionSchema } from "@/shared/schemas/inspector";
 import { startHttpProxyServer } from "@/mitm/inspector/httpProxyServer";
 import { getHttpProxyHandle, setHttpProxyHandle } from "@/lib/inspector/captureState";
 
-const DEFAULT_PORT = Number(process.env.INSPECTOR_HTTP_PROXY_PORT ?? "8080") || 8080;
+const configuredPort = Number(process.env.INSPECTOR_HTTP_PROXY_PORT ?? "8080");
+const DEFAULT_PORT = Number.isInteger(configuredPort) && configuredPort >= 0 && configuredPort <= 65535
+  ? configuredPort
+  : 8080;
 
 export async function POST(request: Request): Promise<Response> {
   let body: unknown;
