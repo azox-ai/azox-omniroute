@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { afterEach, describe, it } from "node:test";
 
 import {
@@ -231,6 +232,34 @@ describe("accountSemaphore", async () => {
 
     await new Promise((resolve) => setTimeout(resolve, 10));
     assert.equal(getStats()[key], undefined);
+  });
+
+  it("settles a queued timeout without another active event-loop handle", () => {
+    const child = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx/esm",
+        "--input-type=module",
+        "--eval",
+        `import { acquire } from "./open-sse/services/accountSemaphore.ts";
+const release = await acquire("timeout-only", { maxConcurrency: 1 });
+try {
+  await acquire("timeout-only", { maxConcurrency: 1, timeoutMs: 50 });
+  process.exitCode = 1;
+} catch (error) {
+  if (error.code !== "SEMAPHORE_TIMEOUT") throw error;
+  process.stdout.write("SEMAPHORE_TIMEOUT\\n");
+} finally {
+  release();
+}`,
+      ],
+      { cwd: process.cwd(), encoding: "utf8", timeout: 5_000 }
+    );
+
+    assert.equal(child.error, undefined);
+    assert.equal(child.status, 0, child.stderr);
+    assert.equal(child.stdout, "SEMAPHORE_TIMEOUT\n");
   });
 
   it("keeps release idempotent for finally blocks", async () => {
