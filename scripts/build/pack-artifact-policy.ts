@@ -151,6 +151,10 @@ export const PACK_ARTIFACT_ROOT_ALLOWED_EXACT_PATHS: string[] = [
   // runtime pack management) — shipped via package.json "files", so must be allowed.
   "scripts/packs/optionalPackInstaller.mjs",
   "scripts/packs/optionalPackManifest.mjs",
+  // Imported by scripts/build/build-next-isolated.mjs (and scripts/dev/run-next.mjs) to
+  // regenerate the client-side global-error catalog; shipped via package.json "files"
+  // because the published build re-runs build-next-isolated, so it must be allowed.
+  "scripts/i18n/generate-global-error-messages.mjs",
   "scripts/build/sync-env.mjs",
   "scripts/dev/responses-ws-proxy.mjs",
   "scripts/dev/sync-env.mjs",
@@ -231,6 +235,10 @@ export const PACK_ARTIFACT_REQUIRED_PATHS: string[] = [
   // listed REQUIRED so their absence from the tarball fails loudly.
   "scripts/packs/optionalPackInstaller.mjs",
   "scripts/packs/optionalPackManifest.mjs",
+  // Imported by scripts/build/build-next-isolated.mjs, which IS shipped as the published
+  // `npm run build` entrypoint — without this generator the build crashes with
+  // ERR_MODULE_NOT_FOUND, so its absence must fail loudly.
+  "scripts/i18n/generate-global-error-messages.mjs",
   "src/shared/utils/nodeRuntimeSupport.ts",
 ];
 
