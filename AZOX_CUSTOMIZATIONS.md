@@ -34,11 +34,27 @@ Portal-managed connections are identified by a nonempty string in
 | Health sweep guard (D1) | Ported | `src/lib/tokenHealthCheck.ts` |
 | Reactive refresh and manual test guards (D1) | Ported | `open-sse/services/tokenRefresh.ts`, `src/app/api/providers/[id]/test/route.ts` |
 | Large terminal SSE event fix, F4 (D1) | Ported | `open-sse/utils/earlyStreamKeepalive.ts` |
-| Internal Portal route, atomic DB upsert, narrow management-auth carve-out (D2; no migration) | Source ported; qualification pending | `src/lib/db/portalConnections.ts`, `src/app/api/internal/portal/connections/[externalId]/route.ts`, `src/lib/auth/portalSync.ts` |
+| Internal Portal route, atomic DB upsert, narrow management-auth carve-out (D2; no migration) | Ported; local regressions pass, production smoke pending | `src/lib/db/portalConnections.ts`, `src/app/api/internal/portal/connections/[externalId]/route.ts`, `src/lib/auth/portalSync.ts` |
 
 The D2 source calls `buildPortalRecoveryUpdate()` inside the DB write transaction.
-This describes source intent only: D1 and D2 tests remain **NOT RUN** and neither
-change has runtime qualification clearance.
+At candidate `32e54afbb81692631812350d129046c31af69d39`, the three D1/SSE
+regression files listed below plus `tests/unit/portal-sync-d2.test.ts` passed 48/48 using
+`node --import tsx/esm --test`. The exact-head staging suites and build passed
+separately; the build peaked at 8,559,177,728 of 8,589,934,592 bytes, leaving
+little measured memory headroom. This is not Portal-to-router production smoke.
+
+Compared with upstream `v3.8.52` at `ad6f33f66bda34eba98645d3bfdabbde294bc843`,
+Portal marker, DB module and internal route are absent. Classification by seam:
+
+| Seam | Classification | Behavior evidence |
+|---|---|---|
+| D1 marker, health sweep, reactive refresh and manual test | `carry` | `portal-managed-connection-health.test.ts`, `token-health-no-refresh-token-expired-5326.test.ts`: Portal rows skip local refresh/expiry; direct-login rows retain refresh. |
+| F4 large terminal SSE event | `carry` | `earlyStreamKeepalive-terminal.test.ts`: terminal event does not emit a second failure. |
+| D2 route, strict payload, atomic marker/version upsert and recovery | `carry` | `portal-sync-d2.test.ts`: A2–A4/A6–A8, including independent-worker version race and targeted DELETE. |
+| D2 original-path and bearer exception in upstream management policy | `redesign` | `portal-sync-d2.test.ts`: A1/F1 checks exact path, malformed/encoded path negatives and bearer fail-closed. |
+
+No Portal behavior is classified `retire`: upstream lacks these seams, and a
+similar-looking auth/refresh path is not proof of contract equivalence.
 
 ### Skip contract for Portal rows
 
@@ -55,7 +71,7 @@ change has runtime qualification clearance.
   missing refresh token, including the Portal contract's `refreshToken: null`.
   Fixtures exercise the real executor through `refreshWithRetry` seven times,
   check no fetch/persist or row mutation, and contrast direct-login failure and
-  successful refresh. These fixtures are **NOT RUN** under the D1 execution gate.
+  successful refresh. These fixtures passed in the focused 48/48 run above.
 - Known gap: `open-sse/executors/antigravity.ts` `refreshCredentials` calls the
   refresh endpoint without `getAccessToken` and has no Portal guard. The
   Portal contract provisions only `claude` and `codex` rows, and Portal rows
@@ -87,7 +103,8 @@ with `stream_disconnected`. The buffer limit is unchanged.
 - `tests/unit/earlyStreamKeepalive-terminal.test.ts`
 - `tests/unit/token-health-no-refresh-token-expired-5326.test.ts`
 
-Test status for D1: written, **NOT RUN** (no repo code was executed).
+Test status for D1: the three required files passed in the focused 48/48 run on
+candidate `32e54afb`; no live Portal request was run.
 
 ### Upstream upgrade checklist
 
@@ -98,7 +115,8 @@ Test status for D1: written, **NOT RUN** (no repo code was executed).
 3. Confirm nested `expiredRetry` and `refreshCircuit` are cleared on recovery.
 4. Confirm direct-login OAuth refresh tests remain unchanged and passing.
 5. Confirm a large terminal Responses event produces no extra `response.failed`.
-6. Before rollout, qualify D2 and smoke one Codex and one Claude request under separate clearance.
+6. Before rollout, reconcile cumulative smoke usage and run one Codex and one Claude
+   request only within the remaining approved production budget.
 
 ### Portal D2 source contract (AZO-1104)
 
@@ -151,16 +169,19 @@ Test status for D1: written, **NOT RUN** (no repo code was executed).
 - Rollout token creation/configuration, real DB changes, migration, deployment
   and qualification remain separate gates. This output configures no real token.
 
-| Acceptance | Source | Fixtures (written, NOT RUN) |
+| Acceptance | Source | Fixtures (48/48 focused tests passed on `32e54afb`) |
 | --- | --- | --- |
 | A1/F1 | `portalSync.ts`, management policy, route auth | `portal-sync-d2.test.ts`: real classifier then policy, original trailing slash/sibling/descendant/encoded separator negatives, fail-closed path/bearer |
 | A2 | `portalConnections.ts`: immediate transaction, digest/version checks | versions no-op/conflict/no-downgrade |
 | A3 | `portalConnections.ts`: marker lookup and direct insert under lock | independent workers: two creates, v4/v5; `portal-sync-race-worker.mjs` |
 | A4 | DB recovery + D1 helper + route connection reset | poisoned row recovery, nested secret rejection, no refresh persistence |
-| A5 | D1 health/reactive/manual-test guards unchanged | existing `portal-managed-connection-health.test.ts` (NOT RUN) |
+| A5 | D1 health/reactive/manual-test guards unchanged | existing `portal-managed-connection-health.test.ts` (passed in focused run) |
 | A6 | direct insert; no direct-login mutation or provider reset | same-email no-adoption; direct-login fixture; existing `token-health-no-refresh-token-expired-5326.test.ts` unchanged |
 | A7/F2 | shared ID validation, response projection, sanitized errors, targeted DELETE cleanup | GET/DELETE/invalid IDs, DB failures, Portal combo/LKGP refs with direct-login controls, post-commit cleanup failure |
 | A8 | strict provider enum, conflict inside transaction | Claude/Codex positive, invalid/change-provider negative |
 
-Verification: source review only. Test/lint/typecheck/build and RED/GREEN are
-**NOT RUN** because Task3/V1–V9 clearance has not been granted. No runtime PASS.
+Verification: 48/48 focused D1/D2/SSE tests passed on `32e54afb`. Full candidate
+Node main, dashboard, serial, MCP and UI suites passed on the same head in
+staging; the build passed with near-limit memory consumption. This is not
+RED/GREEN proof for every new fixture or live Portal smoke. Task3/V1–V9 is no
+longer a prerequisite after C42; production rollout still has separate gates.
