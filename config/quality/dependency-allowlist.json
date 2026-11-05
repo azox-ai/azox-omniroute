@@ -1,6 +1,8 @@
 {
   "_comment": "Allowlist anti-slopsquatting (check-deps.mjs). Toda dep nova exige adicao EXPLICITA aqui apos verificar que e legitima.",
   "_justifications": {
+    "vite": "Vite is the official build/test tool already used transitively by vitest; declaring the patched version directly stabilizes hoisting for the security refresh. Refs #14.",
+    "playwright-core": "Direct declaration added in the dependency security refresh so the dynamic import(\"playwright-core\") in open-sse/vendor resolves; same publisher and pinned version (1.62.1) as playwright, which is already allowlisted. Refs #14.",
     "@testing-library/dom": "Peer dep obrigatoria de @testing-library/react v16 (adicionada no PR #11224); Refs #9985.",
     "@testing-library/user-event": "Utilitario oficial do ecossistema testing-library para testes de UI (adicionada no PR #11224); Refs #9985."
   },
@@ -110,6 +112,7 @@
     "pino-abstract-transport",
     "pino-pretty",
     "playwright",
+    "playwright-core",
     "playwright-ctrf-json-reporter",
     "prettier",
     "promptfoo",
@@ -141,6 +144,7 @@
     "update-notifier",
     "uuid",
     "vitest",
+    "vite",
     "wait-on",
     "wreq-js",
     "ws",

@@ -635,6 +635,20 @@ jobs:
           cache: npm
       - uses: ./.github/actions/npm-ci-retry
       - run: npm run check:node-runtime
+      # A hosted PR build received a runner shutdown signal twice while Turbopack
+      # collected page data. Give this job the same memory provisioning as the
+      # hosted Fast Production Build in build.yml; the self-hosted omni-build
+      # runner keeps its own memory/swap configuration.
+      - name: Expand virtual memory (10 GB swap)
+        if: runner.environment == 'github-hosted'
+        run: |
+          sudo swapoff -a || true
+          sudo rm -f /mnt/swapfile /swapfile
+          sudo fallocate -l 10G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=10240
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          free -h
       # NOTE: the webpack `.build/next/cache` actions/cache step was removed with the
       # Turbopack switch below — Turbopack does not read/write the webpack cache dir
       # (its persistent FS cache is still experimental and intentionally NOT enabled),
@@ -650,6 +664,7 @@ jobs:
       - run: npm run build
         env:
           OMNIROUTE_USE_TURBOPACK: "1"
+          NODE_OPTIONS: "--max-old-space-size=12288"
       - name: Archive Next.js build for downstream jobs
         # Use tar so the archive preserves paths relative to CWD (.build/next/...).
         # upload-artifact path-stripping is ambiguous when exclude patterns are used;
