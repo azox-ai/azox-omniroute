@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
+import dns from "node:dns";
 
 const TEST_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "omniroute-sub-svc-"));
 process.env.DATA_DIR = TEST_DATA_DIR;
@@ -181,7 +182,9 @@ test("deleteSubscription unbinds and removes its proxy rows", async () => {
   assert.equal(subRow, undefined);
 });
 
-test("global→rule switch re-evaluates binding: drops global, binds the selected provider scope", async () => {
+test("global→rule switch re-evaluates binding: drops global, binds the selected provider scope", async (t) => {
+  // The fetch stub still traverses the real SSRF guard. Keep DNS deterministic.
+  t.mock.method(dns.promises, "lookup", async () => [{ address: "93.184.216.34", family: 4 }]);
   await reset();
   const db = core.getDbInstance();
 

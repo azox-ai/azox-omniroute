@@ -18,12 +18,18 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import dns from "node:dns";
 
 import { ensureBase64ImagesForClaudeWire } from "../../src/lib/guardrails/visionBridgeHelpers.ts";
 
 // zai speaks the claude wire format (open-sse/config/providers/registry/zai/index.ts),
 // so `isClaudeWireFormatModel` routes it through the base64 self-fetch path.
 const CLAUDE_WIRE_MODEL = "zai/glm-4.6";
+
+// The public-only SSRF guard resolves the hostname before using the injected
+// `fetchImpl`. Pin that lookup to a public address so these tests never depend
+// on live DNS (offline CI / sandboxed runners) — the guard itself stays real.
+const PUBLIC_DNS_ANSWER = [{ address: "93.184.216.34", family: 4 }];
 
 function bodyWithRemoteImage(url: string) {
   return {
@@ -40,6 +46,7 @@ function bodyWithRemoteImage(url: string) {
 }
 
 test("remote image fetched for the claude-wire self-call is downscaled to the long-edge cap", async (t) => {
+  t.mock.method(dns.promises, "lookup", async () => PUBLIC_DNS_ANSWER);
   let sharp: typeof import("sharp");
   try {
     sharp = (await import("sharp")).default as never;
@@ -74,7 +81,8 @@ test("remote image fetched for the claude-wire self-call is downscaled to the lo
   assert.notEqual(meta.width, 4096, "image must have been downscaled, not left at 4096");
 });
 
-test("remote non-image bytes pass through untouched (fail-open, no normalization)", async () => {
+test("remote non-image bytes pass through untouched (fail-open, no normalization)", async (t) => {
+  t.mock.method(dns.promises, "lookup", async () => PUBLIC_DNS_ANSWER);
   const junk = Buffer.from("not-an-image-at-all");
 
   const fetchImpl = (async () =>

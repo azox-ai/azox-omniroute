@@ -140,8 +140,17 @@ test("API-key-only antigravity connection is NOT marked expired by health check"
   );
 });
 
-test("connection with both apiKey and refreshToken: refresh path is tried", async () => {
+test("connection with both apiKey and refreshToken: refresh path is tried", async (t) => {
   await resetStorage();
+  const fetchMock = t.mock.method(
+    globalThis,
+    "fetch",
+    async () =>
+      new Response(JSON.stringify({ error: "invalid_grant" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      })
+  );
 
   // Edge case: connection has both an API key and a refresh token
   // The health check tries the refresh token path first.
@@ -170,6 +179,12 @@ test("connection with both apiKey and refreshToken: refresh path is tried", asyn
     "expired",
     "dual-auth connection with stale refresh token should be expired (refresh path takes precedence)"
   );
+  const refreshCalls = fetchMock.mock.calls.filter((call) => {
+    const input = call.arguments[0];
+    const url = input instanceof Request ? input.url : String(input);
+    return url === "https://oauth2.googleapis.com/token";
+  });
+  assert.ok(refreshCalls.length >= 1, "Google refresh endpoint must be tried");
 });
 
 test("sweep processes all connections with inter-batch stagger + jitter delay", async () => {

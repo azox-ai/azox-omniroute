@@ -627,6 +627,10 @@ export async function runStreamingTail(deps: StreamingTailDeps) {
   });
   const handleStreamFailure = streamFailureFinalizers.handleStreamFailure;
   onPipelineStreamError = streamFailureFinalizers.onPipelineStreamError;
+  // Publish the pipeline error finalizer to the caller immediately: the stream
+  // controller reads it at event time, and a terminal upstream error can arrive
+  // before runStreamingTail resolves and returns it through `carry`.
+  deps.publishPipelineStreamError?.(onPipelineStreamError);
   // #9653: gives a genuine, race-delayed completion a chance to land (see
   // createClientDisconnectGraceHandler's doc comment) before persisting a false
   // 499/0-tokens for a request that actually delivered its full response.

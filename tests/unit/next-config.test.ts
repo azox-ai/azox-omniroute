@@ -266,14 +266,14 @@ function webpackOptions(dev: boolean) {
   return {
     dev,
     isServer: true,
-    defaultLoaders: { babel: {} } as any,
+    defaultLoaders: { babel: {} },
     webpack: { IgnorePlugin: class {} },
   };
 }
 
 test("webpack production build uses native hashing and no persistent cache (AZO-1211)", async () => {
   const { default: nextConfig } = await loadNextConfig("webpack-prod-memory");
-  const config: any = {
+  const config = {
     context: process.cwd(),
     output: { path: "/repo/.build/next/server", hashFunction: "xxhash64" },
     cache: { type: "filesystem" },
@@ -290,7 +290,7 @@ test("webpack production build uses native hashing and no persistent cache (AZO-
 test("webpack dev build keeps webpack hashing and cache defaults (AZO-1211)", async () => {
   const { default: nextConfig } = await loadNextConfig("webpack-dev-memory");
   const cache = { type: "memory" };
-  const config: any = {
+  const config = {
     context: process.cwd(),
     output: { hashFunction: "xxhash64" },
     cache,
@@ -310,7 +310,7 @@ test("next-intl webpack hook preserves caller config and filters known extractor
   infrastructureConsole.warn = (...args: unknown[]) => {
     infrastructureWarnings.push(args);
   };
-  const config: any = {
+  const config = {
     context: process.cwd(),
     infrastructureLogging: { console: infrastructureConsole },
     plugins: [],
@@ -321,12 +321,12 @@ test("next-intl webpack hook preserves caller config and filters known extractor
 
   nextConfig.webpack(config, {
     isServer: false,
-    defaultLoaders: { babel: {} } as any,
+    defaultLoaders: { babel: {} },
     webpack: {
       IgnorePlugin: class {
-        options: any;
+        options: unknown;
 
-        constructor(options) {
+        constructor(options: unknown) {
           this.options = options;
         }
       },
