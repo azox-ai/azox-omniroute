@@ -403,10 +403,10 @@
     "type-coverage": "^2.30.1",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.67.0",
+    "vite": "^8.3.5",
     "vitest": "^4.1.12",
     "wait-on": "^9.1.0",
-    "wtfnode": "^0.10.1",
-    "vite": "^8.3.5"
+    "wtfnode": "^0.10.1"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs}": [
@@ -509,6 +509,7 @@
     "fast-copy": "^4.3.1",
     "@humanfs/node": "^0.17.0",
     "baseline-browser-mapping": "^2.11.35",
-    "basic-ftp": "^6.2.6"
+    "basic-ftp": "^6.2.6",
+    "sharp": "$sharp"
   }
 }
