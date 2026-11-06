@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import path from "node:path";
 import { after, describe, it } from "node:test";
@@ -102,6 +103,39 @@ after(async () => {
   await closeCompressionWorkerPoolForTests();
   __setCompressionWorkerFactoryForTests(null);
   __resetCompressionFailOpenNotifierForTests();
+});
+
+it("settles a worker job timeout without another active event-loop handle", () => {
+  const child = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx/esm",
+      "--input-type=module",
+      "--eval",
+      `import { EventEmitter } from "node:events";
+import { CompressionWorkerPool } from "./open-sse/services/compression/compressionWorkerPool.ts";
+const worker = Object.assign(new EventEmitter(), {
+  postMessage() {},
+  terminate: async () => 0,
+});
+const pool = new CompressionWorkerPool({ size: 1, timeoutMs: 50, workerFactory: () => worker });
+try {
+  await pool.run({ model: "gpt-test", messages: [{ role: "user", content: "hello" }] }, "stacked");
+  process.exitCode = 1;
+} catch (error) {
+  if (!String(error).includes("worker job timeout")) throw error;
+  process.stdout.write("WORKER_TIMEOUT_SETTLED\\n");
+} finally {
+  await pool.close();
+}`,
+    ],
+    { cwd: process.cwd(), encoding: "utf8", timeout: 5_000 }
+  );
+
+  assert.equal(child.error, undefined);
+  assert.equal(child.status, 0, child.stderr);
+  assert.match(child.stdout, /WORKER_TIMEOUT_SETTLED/);
 });
 
 describe("CompressionWorkerPool spawn-failure queue drain", () => {
