@@ -93,9 +93,14 @@ jobs:
             # validate exactly what was pushed, not the highest branch
             TARGET="$PUSHED_REF"
           else
-            # highest release/vX.Y.Z by semver among remote branches
+            # Highest canonical release/vX.Y.Z by semver among remote branches. The
+            # canonical filter has to come BEFORE the sort: a fork carries fork-only
+            # branches such as release/v3.8.51-azox.13, which sort above their upstream
+            # base and were then rejected by the strict guard below — turning every
+            # scheduled run red on a branch this job was never meant to validate.
             TARGET=$(git for-each-ref --format='%(refname:short)' 'refs/remotes/origin/release/v*' \
               | sed 's#origin/##' \
+              | grep -E '^release/v[0-9]+\.[0-9]+\.[0-9]+$' \
               | sort -t/ -k2 -V \
               | tail -1)
           fi
@@ -162,6 +167,14 @@ jobs:
           AFTER_SHA: ${{ github.event.after }}
         run: |
           set -euo pipefail
+          # Forks routinely have Issues turned off (this repo's fork does). `gh issue`
+          # then fails with "the '<repo>' repository has disabled issues" and turns a pure
+          # reporting step red on every nightly — the verdict is already in the job log above,
+          # so skip the issue bookkeeping instead of failing the run.
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY" --jq .has_issues)" != "true" ]; then
+            echo "Issues are disabled on $GITHUB_REPOSITORY — skipping tracking-issue step."
+            exit 0
+          fi
           TITLE="🔴 Release branch not green: ${TARGET}"
           {
             echo "The **release-green** validation found HARD failures on \`${TARGET}\`."
@@ -204,6 +217,14 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          # Forks routinely have Issues turned off (this repo's fork does). `gh issue`
+          # then fails with "the '<repo>' repository has disabled issues" and turns a pure
+          # reporting step red on every nightly — the verdict is already in the job log above,
+          # so skip the issue bookkeeping instead of failing the run.
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY" --jq .has_issues)" != "true" ]; then
+            echo "Issues are disabled on $GITHUB_REPOSITORY — skipping tracking-issue step."
+            exit 0
+          fi
           # The open/update step above is the UPWARD half of the loop; without this
           # step a stale "not green" issue outlives the fix and every base-green check
           # (`AGENTS.md` → "Base-green check") keeps stamping new PRs as base-red inherited.
@@ -285,6 +306,14 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
+          # Forks routinely have Issues turned off (this repo's fork does). `gh issue`
+          # then fails with "the '<repo>' repository has disabled issues" and turns a pure
+          # reporting step red on every nightly — the verdict is already in the job log above,
+          # so skip the issue bookkeeping instead of failing the run.
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY" --jq .has_issues)" != "true" ]; then
+            echo "Issues are disabled on $GITHUB_REPOSITORY — skipping tracking-issue step."
+            exit 0
+          fi
           TITLE="🔴 main branch not green"
           {
             echo "The **main-green** validation found HARD failures on \`main\`."
@@ -321,6 +350,14 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          # Forks routinely have Issues turned off (this repo's fork does). `gh issue`
+          # then fails with "the '<repo>' repository has disabled issues" and turns a pure
+          # reporting step red on every nightly — the verdict is already in the job log above,
+          # so skip the issue bookkeeping instead of failing the run.
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY" --jq .has_issues)" != "true" ]; then
+            echo "Issues are disabled on $GITHUB_REPOSITORY — skipping tracking-issue step."
+            exit 0
+          fi
           # The open/update step above is the UPWARD half of the loop; without this
           # step a stale "not green" issue outlives the fix and every base-green check
           # (`AGENTS.md` → "Base-green check") keeps stamping new PRs as base-red inherited.
@@ -388,8 +425,11 @@ jobs:
           if [ -n "${INPUT_BRANCH:-}" ]; then
             TARGET="$INPUT_BRANCH"
           else
+            # Same canonical-only resolution as the validation job above: fork-only
+            # branches (release/v3.8.51-azox.N) must not be picked and then rejected.
             TARGET=$(git for-each-ref --format='%(refname:short)' 'refs/remotes/origin/release/v*' \
               | sed 's#origin/##' \
+              | grep -E '^release/v[0-9]+\.[0-9]+\.[0-9]+$' \
               | sort -t/ -k2 -V \
               | tail -1)
           fi

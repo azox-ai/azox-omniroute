@@ -26,10 +26,18 @@ on:
 permissions:
   contents: read
 
+# Azox fork tags (<upstream>-azox.<n>) are internal release markers with no upstream
+# desktop channel: they fail the strict `vX.Y.Z` validation below and would take the
+# whole leg down. Every job therefore carries the guard `!(push of a v* tag containing
+# '-azox')` so such a push skips the whole run; `workflow_dispatch` still builds any
+# explicit ref. (The guard is inlined per job: the `env` context is not available in
+# `jobs.<id>.if`.)
+
 jobs:
   validate:
     name: Validate version
     runs-on: ubuntu-latest
+    if: "!(github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && contains(github.ref_name, '-azox'))"
     permissions:
       contents: read
     outputs:
@@ -77,7 +85,7 @@ jobs:
     # This job then skips, every leg falls back to building its own web bundle
     # (the legacy step below), and the pipeline behaves exactly like pre-Stage 8 —
     # no revert needed.
-    if: ${{ !cancelled() && needs.validate.result == 'success' && vars.ELECTRON_SHARED_STANDALONE != 'disabled' }}
+    if: ${{ !cancelled() && !(github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && contains(github.ref_name, '-azox')) && needs.validate.result == 'success' && vars.ELECTRON_SHARED_STANDALONE != 'disabled' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -132,7 +140,7 @@ jobs:
     # failed, fail closed: legs cannot package without the bundle, and silently
     # falling back to four per-leg builds would hide exactly the regression the
     # shared job exists to surface.
-    if: ${{ !cancelled() && needs.validate.result == 'success' && (needs.web-build.result == 'success' || needs.web-build.result == 'skipped') }}
+    if: ${{ !cancelled() && !(github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && contains(github.ref_name, '-azox')) && needs.validate.result == 'success' && (needs.web-build.result == 'success' || needs.web-build.result == 'skipped') }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: write # electron-builder may publish artifacts with GH_TOKEN
@@ -346,7 +354,7 @@ jobs:
     # indistinguishable from "this version has no desktop channel".
     # Now: attach everything that did build, then fail the job loudly (see the last
     # step) so an incomplete channel is visible instead of silent.
-    if: ${{ !cancelled() && needs.validate.result == 'success' }}
+    if: ${{ !cancelled() && !(github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && contains(github.ref_name, '-azox')) && needs.validate.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write # softprops/action-gh-release creates the GitHub Release
@@ -443,7 +451,7 @@ jobs:
     # still publishes, and an incomplete desktop channel shows up as a red job instead
     # of passing unnoticed — the v3.8.49 release had ZERO assets and every gate was
     # green, because nothing ever asserted the release HAS binaries.
-    if: ${{ !cancelled() && needs.release.result == 'success' }}
+    if: ${{ !cancelled() && !(github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && contains(github.ref_name, '-azox')) && needs.release.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -479,7 +487,7 @@ jobs:
     name: Publish to npm
     needs: [validate, release]
     # A re-dispatch that only re-attaches desktop assets must not publish the npm package again.
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_npm }}
+    if: ${{ !(github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && contains(github.ref_name, '-azox')) && (github.event_name != 'workflow_dispatch' || inputs.publish_npm) }}
     permissions:
       # Must be `write`, not `read`: this job calls the reusable npm-publish.yml whose
       # `publish` job needs `contents: write` (gh release upload — attach the SBOM, #3874).
