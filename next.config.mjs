@@ -16,6 +16,11 @@ import {
   isNextIntlExtractorDynamicImportWarning,
 } from "./scripts/build/knownBuildWarnings.mjs";
 
+const DEFAULT_BUILD_WORKERS = 4;
+function resolveBuildWorkers(value) {
+  return /^[1-9]\d*$/.test(value ?? "") ? Number(value) : DEFAULT_BUILD_WORKERS;
+}
+
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 const distDir = process.env.NEXT_DIST_DIR || ".build/next";
 const projectRoot = dirname(fileURLToPath(import.meta.url));
@@ -207,6 +212,11 @@ const nextConfig = {
     webpackMemoryOptimizations: true,
     // Run webpack in a separate Node worker, lowering main-process memory.
     webpackBuildWorker: true,
+    // AZO-1241: Next derives its page-data and static-generation worker pool from the
+    // host CPU count (os.cpus() - 1), e.g. 19 processes on a 20-CPU host, which exceeds an
+    // 8 GiB cgroup during static generation. Use a fixed pool; raise it with
+    // OMNIROUTE_BUILD_WORKERS on larger builders.
+    cpus: resolveBuildWorkers(process.env.OMNIROUTE_BUILD_WORKERS),
     // Next.js proxy (middleware) has a default 10MB body clone limit. File
     // uploads (OpenAI-compatible /v1/files) routinely exceed this. Match the
     // 512 MB server-side cap; tune via env if needed.
