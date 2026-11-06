@@ -134,6 +134,13 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          # Forks routinely have Issues turned off (this repo's fork does); `gh issue` then
+          # fails with "the '<repo>' repository has disabled issues" and turns this pure
+          # reporting step red. The failing versions are already in the job summary above.
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY" --jq .has_issues)" != "true" ]; then
+            echo "Issues are disabled on $GITHUB_REPOSITORY — skipping tracking-issue step."
+            exit 0
+          fi
           TITLE="🌙 nightly-compat: Node 24/26 failures on $TARGET"
           EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$TITLE in:title" --json number --jq '.[0].number')
           BODY="Nightly Node-compat run failed on \`$TARGET\`: $RUN_URL — triage which Node version/shard broke (fail-fast off, all versions reported)."

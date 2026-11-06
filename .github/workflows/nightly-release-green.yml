@@ -167,6 +167,14 @@ jobs:
           AFTER_SHA: ${{ github.event.after }}
         run: |
           set -euo pipefail
+          # Forks routinely have Issues turned off (this repo's fork does). `gh issue`
+          # then fails with "the '<repo>' repository has disabled issues" and turns a pure
+          # reporting step red on every nightly — the verdict is already in the job log above,
+          # so skip the issue bookkeeping instead of failing the run.
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY" --jq .has_issues)" != "true" ]; then
+            echo "Issues are disabled on $GITHUB_REPOSITORY — skipping tracking-issue step."
+            exit 0
+          fi
           TITLE="🔴 Release branch not green: ${TARGET}"
           {
             echo "The **release-green** validation found HARD failures on \`${TARGET}\`."
@@ -209,6 +217,14 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          # Forks routinely have Issues turned off (this repo's fork does). `gh issue`
+          # then fails with "the '<repo>' repository has disabled issues" and turns a pure
+          # reporting step red on every nightly — the verdict is already in the job log above,
+          # so skip the issue bookkeeping instead of failing the run.
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY" --jq .has_issues)" != "true" ]; then
+            echo "Issues are disabled on $GITHUB_REPOSITORY — skipping tracking-issue step."
+            exit 0
+          fi
           # The open/update step above is the UPWARD half of the loop; without this
           # step a stale "not green" issue outlives the fix and every base-green check
           # (`AGENTS.md` → "Base-green check") keeps stamping new PRs as base-red inherited.
@@ -290,6 +306,14 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
+          # Forks routinely have Issues turned off (this repo's fork does). `gh issue`
+          # then fails with "the '<repo>' repository has disabled issues" and turns a pure
+          # reporting step red on every nightly — the verdict is already in the job log above,
+          # so skip the issue bookkeeping instead of failing the run.
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY" --jq .has_issues)" != "true" ]; then
+            echo "Issues are disabled on $GITHUB_REPOSITORY — skipping tracking-issue step."
+            exit 0
+          fi
           TITLE="🔴 main branch not green"
           {
             echo "The **main-green** validation found HARD failures on \`main\`."
@@ -326,6 +350,14 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          # Forks routinely have Issues turned off (this repo's fork does). `gh issue`
+          # then fails with "the '<repo>' repository has disabled issues" and turns a pure
+          # reporting step red on every nightly — the verdict is already in the job log above,
+          # so skip the issue bookkeeping instead of failing the run.
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY" --jq .has_issues)" != "true" ]; then
+            echo "Issues are disabled on $GITHUB_REPOSITORY — skipping tracking-issue step."
+            exit 0
+          fi
           # The open/update step above is the UPWARD half of the loop; without this
           # step a stale "not green" issue outlives the fix and every base-green check
           # (`AGENTS.md` → "Base-green check") keeps stamping new PRs as base-red inherited.

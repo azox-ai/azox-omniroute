@@ -179,8 +179,8 @@ jobs:
         if: needs.prepare.outputs.publish_dockerhub != 'false'
         uses: docker/login-action@v4.6.0
         with:
-          username: ${ secrets.DOCKERHUB_USERNAME }
-          password: ${ secrets.DOCKERHUB_TOKEN }
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v4.6.0
@@ -359,8 +359,8 @@ jobs:
         if: needs.prepare.outputs.publish_dockerhub != 'false'
         uses: docker/login-action@v4.6.0
         with:
-          username: ${ secrets.DOCKERHUB_USERNAME }
-          password: ${ secrets.DOCKERHUB_TOKEN }
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v4.6.0
