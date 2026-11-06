@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -15,7 +15,9 @@ const repoRoot = process.cwd();
 test("MCP server bundle imports successfully on Node 24", () => {
   // Keep the generated bundle below the repository so Node's ESM resolver can
   // find the repository's external production dependencies (for example zod).
-  const outDir = mkdtempSync(join(repoRoot, ".mcp-bundle-startup-"));
+  const scratch = join(repoRoot, "_artifacts");
+  mkdirSync(scratch, { recursive: true });
+  const outDir = mkdtempSync(join(scratch, "mcp-bundle-startup-"));
   const outFile = join(outDir, "server.js");
 
   try {
