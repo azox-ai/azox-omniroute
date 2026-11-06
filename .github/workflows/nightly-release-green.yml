@@ -93,9 +93,14 @@ jobs:
             # validate exactly what was pushed, not the highest branch
             TARGET="$PUSHED_REF"
           else
-            # highest release/vX.Y.Z by semver among remote branches
+            # Highest canonical release/vX.Y.Z by semver among remote branches. The
+            # canonical filter has to come BEFORE the sort: a fork carries fork-only
+            # branches such as release/v3.8.51-azox.13, which sort above their upstream
+            # base and were then rejected by the strict guard below — turning every
+            # scheduled run red on a branch this job was never meant to validate.
             TARGET=$(git for-each-ref --format='%(refname:short)' 'refs/remotes/origin/release/v*' \
               | sed 's#origin/##' \
+              | grep -E '^release/v[0-9]+\.[0-9]+\.[0-9]+$' \
               | sort -t/ -k2 -V \
               | tail -1)
           fi
@@ -388,8 +393,11 @@ jobs:
           if [ -n "${INPUT_BRANCH:-}" ]; then
             TARGET="$INPUT_BRANCH"
           else
+            # Same canonical-only resolution as the validation job above: fork-only
+            # branches (release/v3.8.51-azox.N) must not be picked and then rejected.
             TARGET=$(git for-each-ref --format='%(refname:short)' 'refs/remotes/origin/release/v*' \
               | sed 's#origin/##' \
+              | grep -E '^release/v[0-9]+\.[0-9]+\.[0-9]+$' \
               | sort -t/ -k2 -V \
               | tail -1)
           fi

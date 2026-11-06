@@ -45,8 +45,13 @@ jobs:
           if [ -n "${INPUT_BRANCH:-}" ]; then
             TARGET="$INPUT_BRANCH"
           else
+            # Canonical release branches only. `sort -V` puts a fork-only
+            # release/v3.8.51-azox.13 above its upstream base release/v3.8.51, and the
+            # case guard just below then rejected it — so the whole nightly went red on
+            # a branch it was never meant to validate. Filter before sorting.
             TARGET=$(git for-each-ref --format='%(refname:short)' 'refs/remotes/origin/release/v*' \
               | sed 's#origin/##' \
+              | grep -E '^release/v[0-9]+\.[0-9]+\.[0-9]+$' \
               | sort -t/ -k2 -V \
               | tail -1)
           fi
