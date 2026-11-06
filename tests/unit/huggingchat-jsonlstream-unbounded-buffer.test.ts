@@ -110,9 +110,21 @@ test("streamJsonlToOpenAi terminates the read loop once an idle-timeout signal f
 
   const idleTimeout = AbortSignal.timeout(50);
   const chunks: string[] = [];
+  // The real upstream socket keeps the event loop alive; this mock stream does not.
+  const keepAlive = setTimeout(() => {}, 2_000);
 
-  for await (const chunk of streamJsonlToOpenAi(body, "gpt-huggingchat", "id-2", 0, idleTimeout)) {
-    chunks.push(chunk);
+  try {
+    for await (const chunk of streamJsonlToOpenAi(
+      body,
+      "gpt-huggingchat",
+      "id-2",
+      0,
+      idleTimeout
+    )) {
+      chunks.push(chunk);
+    }
+  } finally {
+    clearTimeout(keepAlive);
   }
 
   assert.ok(idleTimeout.aborted, "expected the idle-timeout signal to have fired");

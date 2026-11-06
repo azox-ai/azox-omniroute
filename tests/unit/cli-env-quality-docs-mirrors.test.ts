@@ -16,6 +16,7 @@ const names = [
   "OMNIROUTE_PROVIDER_CATALOG_PATH",
   "OMNIROUTE_PROVIDER_TEST_MODEL",
   "CODEBUDDY_SYSTEM_PROMPT_MAX_LEN",
+  "PORTAL_SYNC_TOKEN",
 ];
 const qualityPath = "open-sse/services/routing/quality.ts";
 interface State {

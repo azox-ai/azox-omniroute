@@ -1,14 +1,6 @@
-// ENVIRONMENT NOTE (node:test runner cancellation, not a code defect):
-// The subtests below exercise real-timer / AbortSignal.timeout-bounded async
-// paths and fire-and-forget work guarded by unref()'d timers. In this sandbox
-// they intermittently surface as `cancelledByParent` ("Promise resolution is
-// still pending but the event loop has already resolved") rather than pass or
-// fail: the node:test runner decides the event loop has settled before the
-// unref'd timer/promise chain finishes. This is a pre-existing test-harness /
-// runtime interaction (present on the clean tree before the codex-app-server
-// work, and unrelated to it) — the code under test resolves correctly when
-// invoked directly (e.g. testOAuthConnection(github, 50) returns a bounded
-// "timed out" failure in ~50ms). CI, on its runner, completes these normally.
+// ENVIRONMENT NOTE: AbortSignal.timeout uses unref'd timers in Node. The
+// stalled-fetch fixture below keeps a referenced watchdog until the abort,
+// mirroring the socket handle of a real fetch so node:test can observe settlement.
 // Regression guard for the Antigravity OAuth login hang.
 //
 // The dashboard login "just spun forever" because postExchange `await`ed the
@@ -48,7 +40,12 @@ function stalledFetch(init?: { signal?: AbortSignal }): Promise<Response> {
       reject(abortErr());
       return;
     }
-    signal?.addEventListener("abort", () => reject(abortErr()));
+    // A real stalled socket keeps Node alive until its abort signal fires.
+    const watchdog = setTimeout(() => reject(new Error("stalled fetch never aborted")), 30_000);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(watchdog);
+      reject(abortErr());
+    });
   });
 }
 

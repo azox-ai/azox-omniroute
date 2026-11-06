@@ -46,6 +46,15 @@ function handle(msg) {
       return send({ id: msg.id, result: { protocolVersion: 1, agentCapabilities: {} } });
     case "session/new":
       sessions += 1;
+      if (process.env.QODER_PERSONAL_ACCESS_TOKEN === "pt-acp-early-abort") {
+        log("session-new", String(sessions));
+        const release = setInterval(() => {
+          if (!fs.existsSync("__DIR__/release-session")) return;
+          clearInterval(release);
+          send({ id: msg.id, result: { sessionId: "s" + sessions, models: { availableModels: [], currentModelId: "auto" } } });
+        }, 5);
+        return;
+      }
       return send({ id: msg.id, result: { sessionId: "s" + sessions, models: { availableModels: [{ modelId: "auto", name: "Auto (default)" }, { modelId: "qmodel", name: "Qwen3.7-Plus" }], currentModelId: "auto" } } });
     case "session/set_model":
       log("models", p.modelId);
@@ -199,8 +208,12 @@ test(
         model: "auto",
         signal: controller.signal,
       });
-      while (readLines(dir, "spawns").length === 0) await new Promise((r) => setTimeout(r, 5));
+      // The fake agent holds session/new until released, so the abort always lands mid-setup.
+      while (readLines(dir, "session-new").length === 0) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
       controller.abort();
+      fs.writeFileSync(path.join(dir, "release-session"), "");
       const run = await pending;
       assert.equal(run.error, "Aborted");
       assert.deepEqual(readLines(dir, "deletes"), ["s1"]);

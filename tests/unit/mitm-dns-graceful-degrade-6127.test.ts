@@ -44,6 +44,8 @@ test("provisionDnsEntries: default DNS step failure does NOT abort (graceful deg
       // No agents / no custom hosts so the other two steps are no-ops.
       getAgentStates: () => [],
       listEnabledCustomHosts: () => [],
+      // Host-independent: these cases exercise provisioning, not sudo detection.
+      canElevate: () => true,
       logger: spy.logger,
     })
   );
@@ -57,6 +59,8 @@ test("provisionDnsEntries: failed default DNS step logs the stderr to the logger
     },
     getAgentStates: () => [],
     listEnabledCustomHosts: () => [],
+    // Host-independent: these cases exercise provisioning, not sudo detection.
+    canElevate: () => true,
     logger: spy.logger,
   });
 
@@ -84,6 +88,8 @@ test("provisionDnsEntries: a failing agent/custom step does not stop the others 
     },
     getAgentStates: () => [{ dns_enabled: true, agent_id: "__nonexistent_agent__" }] as never,
     listEnabledCustomHosts: () => [{ host: "custom.example.com" }] as never,
+    // Host-independent: these cases exercise provisioning, not sudo detection.
+    canElevate: () => true,
     logger: spy.logger,
   });
   assert.ok(customCalled, "custom-hosts DNS step must run despite earlier failures");
@@ -98,6 +104,8 @@ test("provisionDnsEntries: happy path calls the default step and does not log er
     },
     getAgentStates: () => [],
     listEnabledCustomHosts: () => [],
+    // Host-independent: these cases exercise provisioning, not sudo detection.
+    canElevate: () => true,
     logger: spy.logger,
   });
   assert.ok(defaultCalled, "default DNS step must be invoked");
@@ -120,6 +128,8 @@ test("provisionDnsEntries: SKIP_ANTIGRAVITY_DNS=true skips ALL DNS steps (defaul
       },
       getAgentStates: () => [{ dns_enabled: true, agent_id: "antigravity" }] as never,
       listEnabledCustomHosts: () => [{ host: "custom.example.com" }] as never,
+      // Host-independent: these cases exercise provisioning, not sudo detection.
+      canElevate: () => true,
       logger: spy.logger,
     });
     assert.ok(!defaultCalled, "default DNS step must NOT be called when SKIP_ANTIGRAVITY_DNS=true");
@@ -153,6 +163,8 @@ test("provisionDnsEntries: SKIP_ANTIGRAVITY_DNS=false does NOT skip DNS steps", 
       },
       getAgentStates: () => [],
       listEnabledCustomHosts: () => [],
+      // Host-independent: these cases exercise provisioning, not sudo detection.
+      canElevate: () => true,
       logger: spy.logger,
     });
     assert.ok(defaultCalled, "default DNS step must be called when SKIP_ANTIGRAVITY_DNS=false");

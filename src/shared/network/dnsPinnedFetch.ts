@@ -72,12 +72,23 @@ export function createPinnedFetch(address: string, family: number): typeof fetch
       // for every real request once autoSelectFamily kicks in, silently
       // breaking every pinned fetch — verified by
       // `tests/unit/remote-image-fetch-pin-dns-connection.test.ts`.
+      //
+      // The callback is always deferred: `dns.lookup` is asynchronous, and Node's
+      // connect path relies on that. Invoking it synchronously lets a connect
+      // failure (e.g. ENETUNREACH) be emitted on the socket before the HTTP
+      // client has attached its `error` listener, crashing the process with an
+      // unhandled 'error' event instead of rejecting the fetch.
       lookup: (_hostname, options, callback) => {
-        if (options && typeof options === "object" && "all" in options && options.all) {
-          callback(null, [{ address, family }]);
-          return;
-        }
-        callback(null, address, family);
+        const wantsAll = Boolean(
+          options && typeof options === "object" && "all" in options && options.all
+        );
+        process.nextTick(() => {
+          if (wantsAll) {
+            callback(null, [{ address, family }]);
+            return;
+          }
+          callback(null, address, family);
+        });
       },
     },
   });

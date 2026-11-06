@@ -481,40 +481,56 @@ describe("modelsDevSync — mapProviderId", () => {
   });
 });
 
-describe("modelsDevSync — fetchModelsDev (live API)", () => {
-  it("fetches data from models.dev API", async () => {
-    const data = await fetchModelsDev();
-    assert.ok(typeof data === "object", "data should be an object");
-
-    const providerCount = Object.keys(data).length;
-    assert.ok(providerCount >= 100, `should have 100+ providers, got ${providerCount}`);
-
-    let modelCount = 0;
-    for (const provider of Object.values(data)) {
-      const p = provider;
-      if (p.models) {
-        modelCount += Object.keys(p.models).length;
-      }
-    }
-    assert.ok(modelCount >= 4000, `should have 4000+ models, got ${modelCount}`);
+describe("modelsDevSync — fetchModelsDev (deterministic fetch)", () => {
+  // The live models.dev payload is covered by modelsDevSync.live.test.ts (opt-in). These
+  // cases pin fetchModelsDev's own contract offline: URL, status/JSON errors, and the
+  // in-memory cache. Error cases run first because they must not populate the cache.
+  it("rejects a non-OK response without caching it", async (t) => {
+    const fetchMock = t.mock.method(
+      globalThis,
+      "fetch",
+      async () => new Response("upstream down", { status: 503, statusText: "Service Unavailable" })
+    );
+    await assert.rejects(fetchModelsDev(), /models\.dev fetch failed \[503\]/);
+    assert.equal(fetchMock.mock.callCount(), 1);
   });
 
-  it("returns cached data on second call", async () => {
+  it("rejects invalid JSON without caching it", async (t) => {
+    const fetchMock = t.mock.method(
+      globalThis,
+      "fetch",
+      async () => new Response("<html>not json</html>", { status: 200 })
+    );
+    await assert.rejects(fetchModelsDev(), /models\.dev returned invalid JSON/);
+    assert.equal(fetchMock.mock.callCount(), 1);
+  });
+
+  it("fetches and parses the models.dev API payload", async (t) => {
+    const fetchMock = t.mock.method(
+      globalThis,
+      "fetch",
+      async () =>
+        new Response(JSON.stringify(MOCK_MODELS_DEV_DATA), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })
+    );
+    const data = await fetchModelsDev();
+    assert.equal(fetchMock.mock.callCount(), 1);
+    assert.equal(String(fetchMock.mock.calls[0].arguments[0]), "https://models.dev/api.json");
+    assert.deepEqual(data, MOCK_MODELS_DEV_DATA);
+    assert.ok(data.openai.models["gpt-4o"], "gpt-4o model should exist");
+    const claudeModels = Object.keys(data.anthropic.models).filter((m) => m.includes("claude"));
+    assert.ok(claudeModels.length > 0, "should have claude models");
+  });
+
+  it("returns the cached reference without refetching", async (t) => {
+    const fetchMock = t.mock.method(globalThis, "fetch", async () => {
+      throw new Error("fetch must not be called while the cache is fresh");
+    });
     const data1 = await fetchModelsDev();
     const data2 = await fetchModelsDev();
     assert.strictEqual(data1, data2, "should return same cached reference");
-  });
-
-  it("has openai provider with gpt-4o model", async () => {
-    const data = await fetchModelsDev();
-    assert.ok(data.openai, "openai provider should exist");
-    assert.ok(data.openai.models["gpt-4o"], "gpt-4o model should exist");
-  });
-
-  it("has anthropic provider with claude models", async () => {
-    const data = await fetchModelsDev();
-    assert.ok(data.anthropic, "anthropic provider should exist");
-    const claudeModels = Object.keys(data.anthropic.models).filter((m) => m.includes("claude"));
-    assert.ok(claudeModels.length > 0, "should have claude models");
+    assert.equal(fetchMock.mock.callCount(), 0);
   });
 });

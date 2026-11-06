@@ -257,6 +257,78 @@ test("manager.stub.ts exports every name statically imported from @/mitm/manager
   );
 });
 
+// AZO-1211: the 8 GiB / 48 GiB-address-space staging builder OOMs on the webpack
+// production pass. Webpack's default xxhash64 is a WASM module that reserves large
+// virtual memory, and the persistent filesystem pack cache pushes RSS past the cgroup
+// limit while serializing. Production builds use the native sha256 hash and no
+// persistent cache; dev keeps webpack's defaults for fast rebuilds.
+function webpackOptions(dev: boolean) {
+  return {
+    dev,
+    isServer: true,
+    defaultLoaders: { babel: {} },
+    webpack: { IgnorePlugin: class {} },
+  };
+}
+
+test("webpack production build uses native hashing and no persistent cache (AZO-1211)", async () => {
+  const { default: nextConfig } = await loadNextConfig("webpack-prod-memory");
+  const config = {
+    context: process.cwd(),
+    output: { path: "/repo/.build/next/server", hashFunction: "xxhash64" },
+    cache: { type: "filesystem" },
+    plugins: [],
+  };
+
+  nextConfig.webpack(config, webpackOptions(false));
+
+  assert.equal(config.output.hashFunction, "sha256");
+  assert.equal(config.output.path, "/repo/.build/next/server");
+  assert.equal(config.cache, false);
+});
+
+// AZO-1241: Next sizes its page-data and static-generation worker pool from the host CPU
+// count (os.cpus() - 1). On a 20-CPU host the pool is 19 processes, which exceeds an 8 GiB
+// cgroup during static generation even though the container is limited to 2 CPUs. Cap the
+// pool at a fixed default and let large builders raise it explicitly.
+test("next config caps build workers and honours OMNIROUTE_BUILD_WORKERS (AZO-1241)", async () => {
+  const original = process.env.OMNIROUTE_BUILD_WORKERS;
+  try {
+    delete process.env.OMNIROUTE_BUILD_WORKERS;
+    const { default: capped } = await loadNextConfig("build-workers-default");
+    assert.equal(capped.experimental.cpus, 4);
+
+    process.env.OMNIROUTE_BUILD_WORKERS = "8";
+    const { default: raised } = await loadNextConfig("build-workers-env");
+    assert.equal(raised.experimental.cpus, 8);
+
+    for (const invalid of ["0", "-3", "abc", "2.5", ""]) {
+      process.env.OMNIROUTE_BUILD_WORKERS = invalid;
+      const { default: fallback } = await loadNextConfig(`build-workers-invalid-${invalid}`);
+      assert.equal(fallback.experimental.cpus, 4, `invalid value ${JSON.stringify(invalid)}`);
+    }
+  } finally {
+    if (original === undefined) delete process.env.OMNIROUTE_BUILD_WORKERS;
+    else process.env.OMNIROUTE_BUILD_WORKERS = original;
+  }
+});
+
+test("webpack dev build keeps webpack hashing and cache defaults (AZO-1211)", async () => {
+  const { default: nextConfig } = await loadNextConfig("webpack-dev-memory");
+  const cache = { type: "memory" };
+  const config = {
+    context: process.cwd(),
+    output: { hashFunction: "xxhash64" },
+    cache,
+    plugins: [],
+  };
+
+  nextConfig.webpack(config, webpackOptions(true));
+
+  assert.equal(config.output.hashFunction, "xxhash64");
+  assert.equal(config.cache, cache);
+});
+
 test("next-intl webpack hook preserves caller config and filters known extractor warnings", async () => {
   const { default: nextConfig } = await loadNextConfig("webpack-pass-through");
   const infrastructureWarnings: unknown[][] = [];
@@ -264,7 +336,7 @@ test("next-intl webpack hook preserves caller config and filters known extractor
   infrastructureConsole.warn = (...args: unknown[]) => {
     infrastructureWarnings.push(args);
   };
-  const config: any = {
+  const config = {
     context: process.cwd(),
     infrastructureLogging: { console: infrastructureConsole },
     plugins: [],
@@ -275,12 +347,12 @@ test("next-intl webpack hook preserves caller config and filters known extractor
 
   nextConfig.webpack(config, {
     isServer: false,
-    defaultLoaders: { babel: {} } as any,
+    defaultLoaders: { babel: {} },
     webpack: {
       IgnorePlugin: class {
-        options: any;
+        options: unknown;
 
-        constructor(options) {
+        constructor(options: unknown) {
           this.options = options;
         }
       },

@@ -297,7 +297,6 @@ export class CompressionWorkerPool {
         () => this.fail(slot!, `worker job timeout after ${this.timeoutMs}ms`, false),
         this.timeoutMs
       );
-      slot.timeout.unref();
       // `reject` must be stripped alongside the other non-cloneable fields: postMessage
       // uses structured clone, and leaking any function into the wire job throws
       // DataCloneError before the worker ever sees it.

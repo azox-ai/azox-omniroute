@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { hasExactPortalSyncPath, hasValidPortalSyncToken } from "../../../lib/auth/portalSync";
 import { isModelSyncInternalRequest } from "../../../shared/services/modelSyncScheduler";
 import { isAuthRequired, isDashboardSessionAuthenticated } from "../../../shared/utils/apiAuth";
 import type { AuthOutcome, PolicyContext, RoutePolicy } from "../context";
@@ -71,6 +72,10 @@ export const managementPolicy: RoutePolicy = {
   routeClass: "MANAGEMENT",
   async evaluate(ctx: PolicyContext): Promise<AuthOutcome> {
     const path = ctx.classification.normalizedPath;
+
+    if (hasExactPortalSyncPath(ctx.request, path) && hasValidPortalSyncToken(ctx.request)) {
+      return allow({ kind: "management_key", id: "portal-sync", label: "portal-sync-bearer" });
+    }
 
     // Codex Responses-over-WS bridge: honor the per-process bridge secret before
     // the loopback/auth gates so the proxy's internal calls aren't 401'd (which
