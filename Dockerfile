@@ -355,7 +355,7 @@ USER root
 RUN --mount=type=cache,id=s/92ca8a61-c1ba-421f-a389-d48ac7258c2d-apt-cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,id=s/92ca8a61-c1ba-421f-a389-d48ac7258c2d-apt-lists,target=/var/lib/apt/lists,sharing=locked \
   apt-get update \
-  && apt-get install -y --no-install-recommends docker.io docker-compose \
+  && apt-get install -y --no-install-recommends docker.io docker-cli docker-compose \
   && rm -rf /var/lib/apt/lists/*
 USER node
 RUN docker --version && docker-compose --version
