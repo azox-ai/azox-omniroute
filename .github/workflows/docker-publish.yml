@@ -466,12 +466,17 @@ jobs:
 
       - name: Inspect image
         if: needs.prepare.outputs.version != 'main'
+        # Values arrive through `env:` and are read as shell variables — never
+        # interpolated into the script — so zizmor's template-injection audit stays
+        # at its baseline count.
+        env:
+          PUBLISH_DOCKERHUB: ${{ needs.prepare.outputs.publish_dockerhub }}
         run: |
-          image="${{ env.IMAGE_NAME }}"
-          if [ "${{ needs.prepare.outputs.publish_dockerhub }}" = "false" ]; then
-            image="${{ env.GHCR_IMAGE_NAME }}"
+          image="$IMAGE_NAME"
+          if [ "$PUBLISH_DOCKERHUB" = "false" ]; then
+            image="$GHCR_IMAGE_NAME"
           fi
-          docker buildx imagetools inspect "${image}:${{ env.VERSION }}"
+          docker buildx imagetools inspect "${image}:${VERSION}"
 
       - name: Generate CycloneDX SBOM (image, advisory)
         if: needs.prepare.outputs.version != 'main'
